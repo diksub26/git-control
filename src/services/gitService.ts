@@ -1,11 +1,14 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import {
   CommandLogEntry,
   CommitFileChange,
   DiffHunk,
   DiffLine,
   FileDiffData,
+  GitAccountProvider,
   GitCommit,
+  GitConfigIdentity,
   GitRef,
   GitSubmodule,
   GitWorktree,
@@ -59,11 +62,17 @@ export async function execGit(
     result = await res.json();
   }
 
+  const rawCmd = result.command || `git ${args.join(' ')}`;
+  const maskedCmd = rawCmd.replace(
+    /http\.extraHeader=Authorization:\s*Basic\s+[^\s]+/gi,
+    'http.extraHeader=Authorization: Basic ***'
+  );
+
   const logEntry: CommandLogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     timestamp: new Date().toLocaleTimeString(),
     repoPath,
-    command: result.command || `git ${args.join(' ')}`,
+    command: maskedCmd,
     durationMs: Number(result.durationMs || 0),
     exitCode: result.exitCode,
     stdout: result.stdout,
@@ -133,7 +142,35 @@ export async function openInExternalEditor(
   }
 }
 
+export async function startWatchingRepository(
+  repoPath: string,
+  onRepoChanged: () => void
+): Promise<() => void> {
+  if (!isTauriRuntime()) {
+    return () => {};
+  }
+  try {
+    await invoke('watch_repository', { repoPath });
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unlisten = await listen<string>('repo-fs-changed', (event) => {
+      if (event.payload?.toLowerCase() === repoPath.toLowerCase()) {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          onRepoChanged();
+        }, 650);
+      }
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+      unlisten();
+    };
+  } catch {
+    return () => {};
+  }
+}
+
 export interface FullRepoState {
+  isGitInitialized: boolean;
   currentBranch: string;
   headHash: string;
   commits: GitCommit[];
@@ -146,7 +183,7 @@ export interface FullRepoState {
 
 export interface GraphFetchOptions {
   maxCount?: number;
-  branchFilter?: string; // 'all' or specific branch name
+  selectedBranches?: string[]; // empty array = all branches & remotes
   CommitOrdering?: 'date' | 'topo' | 'author-date';
   firstParentOnly?: boolean;
 }
@@ -163,22 +200,18 @@ export async function loadRepositoryState(
       ? '--author-date-order'
       : '--date-order';
 
-  const branchArg =
-    options.branchFilter && options.branchFilter !== 'all'
-      ? [options.branchFilter]
-      : ['--branches', '--tags', '--remotes', 'HEAD'];
-
   const firstParentArg = options.firstParentOnly ? ['--first-parent'] : [];
 
   // 1. Fetch current branch & HEAD hash
-  const [headBranchRes, headHashRes, statusRes, refsRes, stashRes, remoteRes] =
+  const [headBranchRes, symbolicHeadRes, headHashRes, statusRes, refsRes, stashRes, remoteRes] =
     await Promise.all([
       execGit(repoPath, ['rev-parse', '--abbrev-ref', 'HEAD']),
+      execGit(repoPath, ['symbolic-ref', '--short', 'HEAD']),
       execGit(repoPath, ['rev-parse', 'HEAD']),
       execGit(repoPath, ['status', '--porcelain=v1', '-uall']),
       execGit(repoPath, [
         'for-each-ref',
-        '--format=%(refname)\x01%(refname:short)\x01%(objectname)\x01%( objecttype )\x01%(*objectname)\x01%(HEAD)\x01%(upstream:short)\x01%(upstream:track)',
+        '--format=%(refname)\x01%(refname:short)\x01%(objectname)\x01%(objecttype)\x01%(*objectname)\x01%(HEAD)\x01%(upstream:short)\x01%(upstream:track)',
         'refs/heads',
         'refs/remotes',
         'refs/tags',
@@ -191,8 +224,14 @@ export async function loadRepositoryState(
       execGit(repoPath, ['remote', '-v']),
     ]);
 
-  const currentBranch = headBranchRes.stdout.trim() || 'HEAD';
-  const headHash = headHashRes.stdout.trim();
+  const isGitInitialized = !statusRes.stderr
+    .toLowerCase()
+    .includes('not a git repository');
+  const currentBranch =
+    (headBranchRes.exitCode === 0 && headBranchRes.stdout.trim()) ||
+    (symbolicHeadRes.exitCode === 0 && symbolicHeadRes.stdout.trim()) ||
+    (isGitInitialized ? 'main' : 'uninitialized');
+  const headHash = headHashRes.exitCode === 0 ? headHashRes.stdout.trim() : '';
 
   // 2. Parse Refs
   const refs: GitRef[] = [];
@@ -259,7 +298,16 @@ export async function loadRepositoryState(
   // 3. Parse Working Files
   const workingFiles = parseGitStatusPorcelain(statusRes.stdout);
 
-  // 4. Fetch Git Log for Graph
+  // 4. Fetch Git Log for Graph (only include selected branches that exist in this repo)
+  const validRefNames = new Set(refs.map((r) => r.name));
+  const validSelectedBranches = (options.selectedBranches || []).filter((b) =>
+    validRefNames.has(b)
+  );
+  const branchArg =
+    validSelectedBranches.length > 0
+      ? validSelectedBranches
+      : ['--branches', '--tags', '--remotes', 'HEAD'];
+
   const logFormat = '%H\x01%h\x01%P\x01%an\x01%ae\x01%at\x01%ct\x01%s';
   const logRes = await execGit(repoPath, [
     'log',
@@ -353,17 +401,14 @@ export async function loadRepositoryState(
     });
   }
 
-  // 7. Fetch Worktrees & Submodules
-  const [worktreeRes, submoduleRes] = await Promise.all([
-    execGit(repoPath, ['worktree', 'list', '--porcelain']),
-    execGit(repoPath, ['submodule', 'status']),
-  ]);
-
+  // 7. Fetch Worktrees & Submodules (fast native git commands without spawning MSYS2 sh.exe)
+  const worktreeRes = await execGit(repoPath, ['worktree', 'list', '--porcelain']);
   const worktrees = parseWorktrees(worktreeRes.stdout);
-  const submodules = parseSubmodules(submoduleRes.stdout);
+  const submodules: GitSubmodule[] = [];
   const remoteInfo = parseRemoteHostInfo(remoteRes.stdout);
 
   return {
+    isGitInitialized,
     currentBranch,
     headHash,
     commits,
@@ -911,4 +956,286 @@ export async function fetchRemotePullRequestsAndIssues(
   }
 
   return { pullRequests: [], issues: [] };
+}
+
+/**
+ * Reads both Global and Local (per-repo) Git user.name & user.email
+ */
+export async function getGitConfigIdentity(
+  repoPath?: string
+): Promise<GitConfigIdentity> {
+  const cwd = repoPath?.trim() || '';
+  const [gNameRes, gEmailRes, lNameRes, lEmailRes] = await Promise.all([
+    execGit(cwd, ['config', '--global', '--get', 'user.name']),
+    execGit(cwd, ['config', '--global', '--get', 'user.email']),
+    cwd
+      ? execGit(cwd, ['config', '--local', '--get', 'user.name'])
+      : Promise.resolve({ stdout: '', stderr: '', exitCode: 1, durationMs: 0, command: '' }),
+    cwd
+      ? execGit(cwd, ['config', '--local', '--get', 'user.email'])
+      : Promise.resolve({ stdout: '', stderr: '', exitCode: 1, durationMs: 0, command: '' }),
+  ]);
+
+  const globalName = gNameRes.exitCode === 0 ? gNameRes.stdout.trim() : '';
+  const globalEmail = gEmailRes.exitCode === 0 ? gEmailRes.stdout.trim() : '';
+  const localName = lNameRes.exitCode === 0 ? lNameRes.stdout.trim() : '';
+  const localEmail = lEmailRes.exitCode === 0 ? lEmailRes.stdout.trim() : '';
+
+  return {
+    globalName,
+    globalEmail,
+    localName,
+    localEmail,
+    effectiveName: localName || globalName,
+    effectiveEmail: localEmail || globalEmail,
+  };
+}
+
+/**
+ * Sets Git user.name & user.email at either --global or --local scope
+ */
+export async function setGitConfigIdentity(
+  scope: 'global' | 'local',
+  name: string,
+  email: string,
+  repoPath?: string
+): Promise<boolean> {
+  const flag = scope === 'global' ? '--global' : '--local';
+  const cwd = repoPath?.trim() || '';
+  if (scope === 'local' && !cwd) return false;
+
+  const [r1, r2] = await Promise.all([
+    execGit(cwd, ['config', flag, 'user.name', name.trim()]),
+    execGit(cwd, ['config', flag, 'user.email', email.trim()]),
+  ]);
+
+  return r1.exitCode === 0 && r2.exitCode === 0;
+}
+
+/**
+ * Clears --local user.name & user.email on a repository so it inherits --global
+ */
+export async function clearLocalGitConfigIdentity(
+  repoPath: string
+): Promise<void> {
+  if (!repoPath.trim()) return;
+  await Promise.all([
+    execGit(repoPath, ['config', '--local', '--unset', 'user.name']),
+    execGit(repoPath, ['config', '--local', '--unset', 'user.email']),
+  ]);
+}
+
+/**
+ * Verifies a Personal Access Token (PAT) with GitHub, GitLab, or Bitbucket API
+ * and returns the authenticated user profile.
+ */
+export async function verifyProviderToken(
+  provider: GitAccountProvider,
+  token: string,
+  hostUrl?: string
+): Promise<{
+  username: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+}> {
+  const cleanToken = token.trim();
+  if (!cleanToken) {
+    throw new Error('Personal Access Token is required');
+  }
+
+  if (provider === 'github') {
+    const apiBase =
+      hostUrl &&
+      !hostUrl.includes('github.com') &&
+      hostUrl.startsWith('http')
+        ? `${hostUrl.replace(/\/+$/, '')}/api/v3`
+        : 'https://api.github.com';
+
+    const headers = {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${cleanToken}`,
+    };
+
+    const res = await fetch(`${apiBase}/user`, { headers });
+    if (!res.ok) {
+      throw new Error(`GitHub authentication failed (${res.status} ${res.statusText})`);
+    }
+    const profile = await res.json();
+    let email: string = profile.email || '';
+
+    if (!email) {
+      try {
+        const emailRes = await fetch(`${apiBase}/user/emails`, { headers });
+        if (emailRes.ok) {
+          const emails = await emailRes.json();
+          if (Array.isArray(emails)) {
+            const primary =
+              emails.find((e: any) => e.primary && e.verified) ||
+              emails.find((e: any) => e.primary) ||
+              emails[0];
+            if (primary?.email) email = primary.email;
+          }
+        }
+      } catch {
+        // Fallback to noreply github email
+      }
+    }
+
+    if (!email && profile.login) {
+      email = `${profile.id ? `${profile.id}+` : ''}${profile.login}@users.noreply.github.com`;
+    }
+
+    return {
+      username: profile.login || '',
+      name: profile.name || profile.login || '',
+      email,
+      avatarUrl: profile.avatar_url || undefined,
+    };
+  }
+
+  if (provider === 'gitlab') {
+    const baseHost = (hostUrl?.trim() || 'https://gitlab.com').replace(/\/+$/, '');
+    const res = await fetch(`${baseHost}/api/v4/user`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${cleanToken}`,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`GitLab authentication failed (${res.status} ${res.statusText})`);
+    }
+    const profile = await res.json();
+    return {
+      username: profile.username || '',
+      name: profile.name || profile.username || '',
+      email: profile.email || profile.public_email || `${profile.username}@users.noreply.gitlab.com`,
+      avatarUrl: profile.avatar_url || undefined,
+    };
+  }
+
+  if (provider === 'bitbucket') {
+    const res = await fetch('https://api.bitbucket.org/2.0/user', {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${cleanToken}`,
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`Bitbucket authentication failed (${res.status} ${res.statusText})`);
+    }
+    const profile = await res.json();
+    return {
+      username: profile.username || profile.nickname || '',
+      name: profile.display_name || profile.username || '',
+      email: '',
+      avatarUrl: profile.links?.avatar?.href || undefined,
+    };
+  }
+
+  throw new Error('Automatic token verification is supported for GitHub, GitLab, and Bitbucket.');
+}
+
+/**
+ * Creates a new remote repository on GitHub or GitLab via REST API
+ * and returns its clone/push URL and web URL.
+ */
+export async function createRemoteRepositoryViaApi(options: {
+  provider: GitAccountProvider;
+  token: string;
+  hostUrl?: string;
+  repoName: string;
+  description?: string;
+  isPrivate: boolean;
+  protocol: 'https' | 'ssh';
+}): Promise<{ remoteUrl: string; webUrl: string; fullName: string }> {
+  const cleanToken = options.token.trim();
+  const cleanName = options.repoName.trim();
+  if (!cleanToken) {
+    throw new Error('A Personal Access Token is required to create a remote repository via API.');
+  }
+  if (!cleanName) {
+    throw new Error('Repository name is required.');
+  }
+
+  if (options.provider === 'github') {
+    const apiBase =
+      options.hostUrl &&
+      !options.hostUrl.includes('github.com') &&
+      options.hostUrl.startsWith('http')
+        ? `${options.hostUrl.replace(/\/+$/, '')}/api/v3`
+        : 'https://api.github.com';
+
+    const res = await fetch(`${apiBase}/user/repos`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${cleanToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: cleanName,
+        description: options.description?.trim() || '',
+        private: options.isPrivate,
+        auto_init: false,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail =
+        data?.errors?.[0]?.message || data?.message || res.statusText;
+      throw new Error(`GitHub repository creation failed: ${detail}`);
+    }
+
+    return {
+      remoteUrl:
+        options.protocol === 'ssh' ? data.ssh_url : data.clone_url,
+      webUrl: data.html_url,
+      fullName: data.full_name || cleanName,
+    };
+  }
+
+  if (options.provider === 'gitlab') {
+    const baseHost = (options.hostUrl?.trim() || 'https://gitlab.com').replace(
+      /\/+$/,
+      ''
+    );
+    const res = await fetch(`${baseHost}/api/v4/projects`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${cleanToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: cleanName,
+        path: cleanName.toLowerCase().replace(/[^a-z0-9._-]+/g, '-'),
+        description: options.description?.trim() || '',
+        visibility: options.isPrivate ? 'private' : 'public',
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail =
+        typeof data?.message === 'string'
+          ? data.message
+          : JSON.stringify(data?.message || res.statusText);
+      throw new Error(`GitLab project creation failed: ${detail}`);
+    }
+
+    return {
+      remoteUrl:
+        options.protocol === 'ssh'
+          ? data.ssh_url_to_repo
+          : data.http_url_to_repo,
+      webUrl: data.web_url,
+      fullName: data.path_with_namespace || cleanName,
+    };
+  }
+
+  throw new Error(
+    'Automatic remote repository creation is supported for GitHub and GitLab accounts. Use "Publish to Custom Remote URL" for other providers.'
+  );
 }

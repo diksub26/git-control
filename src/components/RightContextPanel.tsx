@@ -11,6 +11,7 @@ import {
   ArrowLeftRight,
   Send,
   Wrench,
+  Loader2,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import { getAuthorAvatarUrl } from '../utils/avatar';
@@ -25,6 +26,8 @@ export const RightContextPanel: React.FC = () => {
     selectedCommitFiles,
     remoteInfo,
     currentBranch,
+    activeRemoteOp,
+    runningOpLabel,
     selectCommit,
     stageFile,
     unstageFile,
@@ -282,19 +285,25 @@ export const RightContextPanel: React.FC = () => {
           </div>
           <div className="flex gap-2">
             <button
+              disabled={Boolean(runningOpLabel)}
               onClick={() => handleCommitSubmit(false)}
-              className="flex-1 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/20 transition"
+              className="flex-1 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-xs font-semibold text-white flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/20 transition"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Commit ({stagedFiles.length})</span>
             </button>
             <button
+              disabled={Boolean(runningOpLabel)}
               onClick={() => handleCommitSubmit(true)}
-              className="px-3 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-500 text-xs font-medium text-white flex items-center gap-1 transition"
+              className="px-3 py-2 rounded-xl bg-indigo-600/80 hover:bg-indigo-500 disabled:opacity-50 text-xs font-medium text-white flex items-center gap-1.5 transition"
               title="Commit & Push to Remote"
             >
-              <Send className="w-3.5 h-3.5" />
-              <span>& Push</span>
+              {activeRemoteOp === 'push' ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Send className="w-3.5 h-3.5" />
+              )}
+              <span>{activeRemoteOp === 'push' ? 'Pushing...' : '& Push'}</span>
             </button>
           </div>
         </div>

@@ -34,6 +34,7 @@ export const DiffAndConflictModal: React.FC = () => {
     refreshActiveRepo,
     stageFile,
     showToast,
+    requestConfirm,
   } = useGitStore();
 
   const [conflictContent, setConflictContent] = useState('');
@@ -56,7 +57,7 @@ export const DiffAndConflictModal: React.FC = () => {
     activeDiffRequest.mode === 'working-unstaged' ||
     activeDiffRequest.mode === 'working-staged';
 
-  const handleHunkOp = async (
+  const executeHunkOp = async (
     hunk: DiffHunk,
     action: 'stage' | 'unstage' | 'discard'
   ) => {
@@ -68,6 +69,26 @@ export const DiffAndConflictModal: React.FC = () => {
     } else {
       showToast(`Hunk ${action} failed: ${res.stderr}`, 'error');
     }
+  };
+
+  const handleHunkOp = async (
+    hunk: DiffHunk,
+    action: 'stage' | 'unstage' | 'discard'
+  ) => {
+    if (action === 'discard') {
+      requestConfirm({
+        title: `Discard Hunk at Line ${hunk.newStart}`,
+        description: `Are you sure you want to permanently discard this hunk in '${activeDiffRequest.filePath}'? These line changes will be lost.`,
+        confirmLabel: 'Discard Hunk',
+        variant: 'danger',
+        commandPreview: `git apply -R (lines ${hunk.oldStart}-${hunk.oldStart + hunk.oldLines})`,
+        onConfirm: async () => {
+          await executeHunkOp(hunk, 'discard');
+        },
+      });
+      return;
+    }
+    await executeHunkOp(hunk, action);
   };
 
   const handleSaveAndResolveConflict = async () => {

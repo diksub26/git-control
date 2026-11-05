@@ -160,4 +160,29 @@ export interface RepoTab {
   currentBranch: string;
   uncommittedCount: number;
   conflictCount: number;
+  selectedBranches?: string[];
+  searchQuery?: string;
+}
+
+export type GitAccountProvider = 'github' | 'gitlab' | 'bitbucket' | 'custom';
+
+export interface GitAccount {
+  id: string;
+  provider: GitAccountProvider;
+  name: string; // git config user.name
+  email: string; // git config user.email
+  username: string;
+  hostUrl?: string;
+  avatarUrl?: string;
+  token?: string;
+  lastUsedAt: number;
+}
+
+export interface GitConfigIdentity {
+  globalName: string;
+  globalEmail: string;
+  localName: string;
+  localEmail: string;
+  effectiveName: string;
+  effectiveEmail: string;
 }

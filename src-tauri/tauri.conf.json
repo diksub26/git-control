@@ -13,12 +13,16 @@
     "macOSPrivateApi": true,
     "windows": [
       {
+        "label": "main",
         "title": "Git Control",
         "width": 1440,
         "height": 900,
         "minWidth": 1024,
         "minHeight": 640,
-        "transparent": true,
+        "visible": true,
+        "center": true,
+        "focus": true,
+        "transparent": false,
         "decorations": true,
         "resizable": true
       }

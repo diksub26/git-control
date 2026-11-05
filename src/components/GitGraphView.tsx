@@ -1,12 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Search,
   GitBranch,
   Tag as TagIcon,
   Archive,
   Globe,
-  Spline,
-  Waypoints,
   Copy,
   GitMerge,
   GitPullRequestDraft,
@@ -16,6 +15,7 @@ import {
   ExternalLink,
   Check,
   Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import {
@@ -39,20 +39,20 @@ interface ContextMenuState {
 
 export const GitGraphView: React.FC = () => {
   const {
+    activeTabId,
     commits,
     refs,
     currentBranch,
     remoteInfo,
-    graphStyle,
-    branchFilter,
+    selectedBranches,
     searchQuery,
     commitOrdering,
     firstParentOnly,
     showAvatars,
     selectedCommitHash,
     compareCommitHash,
-    setGraphStyle,
-    setBranchFilter,
+    toggleBranchSelection,
+    clearBranchSelection,
     setSearchQuery,
     setCommitOrdering,
     setFirstParentOnly,
@@ -60,16 +60,79 @@ export const GitGraphView: React.FC = () => {
     selectCommit,
     runGitOp,
     showToast,
+    requestConfirm,
   } = useGitStore();
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number }>({
+    left: 0,
+    top: 0,
+  });
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const [promptDialog, setPromptDialog] = useState<{
     title: string;
     placeholder: string;
     commitHash: string;
-    mode: 'branch' | 'tag';
+    oldBranchName?: string;
+    mode: 'branch' | 'tag' | 'rename-branch';
   } | null>(null);
   const [promptValue, setPromptValue] = useState('');
+  const [branchDropdownRect, setBranchDropdownRect] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const [branchDropdownQuery, setBranchDropdownQuery] = useState('');
+  const [orderDropdownRect, setOrderDropdownRect] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!contextMenu) return;
+    const el = menuRef.current;
+    const menuWidth = el?.offsetWidth || 256;
+    const menuHeight = el?.offsetHeight || 340;
+    const pad = 8;
+
+    let left = contextMenu.x;
+    let top = contextMenu.y;
+
+    if (left + menuWidth > window.innerWidth - pad) {
+      left = Math.max(pad, contextMenu.x - menuWidth);
+    }
+    if (top + menuHeight > window.innerHeight - pad) {
+      top = Math.max(pad, window.innerHeight - menuHeight - pad);
+    }
+
+    setMenuPos({ left, top });
+  }, [contextMenu]);
+
+  useEffect(() => {
+    setContextMenu(null);
+    setBranchDropdownRect(null);
+    setBranchDropdownQuery('');
+    setOrderDropdownRect(null);
+  }, [activeTabId]);
+
+  useEffect(() => {
+    if (!contextMenu && !branchDropdownRect && !orderDropdownRect) return;
+    const closeAll = () => {
+      setContextMenu(null);
+      setBranchDropdownRect(null);
+      setOrderDropdownRect(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeAll();
+    };
+    window.addEventListener('click', closeAll);
+    window.addEventListener('resize', closeAll);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('click', closeAll);
+      window.removeEventListener('resize', closeAll);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [contextMenu, branchDropdownRect, orderDropdownRect]);
 
   // Compute full graph layout from commits
   const graph = useMemo(() => computeGitGraph(commits), [commits]);
@@ -109,6 +172,7 @@ export const GitGraphView: React.FC = () => {
   };
 
   const localBranches = refs.filter((r) => r.type === 'local-branch');
+  const remoteBranches = refs.filter((r) => r.type === 'remote-branch');
 
   const handleContextMenu = (
     e: React.MouseEvent,
@@ -117,9 +181,10 @@ export const GitGraphView: React.FC = () => {
   ) => {
     e.preventDefault();
     e.stopPropagation();
+    setMenuPos({ left: e.clientX, top: e.clientY });
     setContextMenu({
-      x: Math.min(e.clientX, window.innerWidth - 260),
-      y: Math.min(e.clientY, window.innerHeight - 360),
+      x: e.clientX,
+      y: e.clientY,
       commit,
       targetRef,
     });
@@ -135,6 +200,11 @@ export const GitGraphView: React.FC = () => {
         promptValue.trim(),
         promptDialog.commitHash,
       ]);
+    } else if (promptDialog.mode === 'rename-branch' && promptDialog.oldBranchName) {
+      await runGitOp(
+        `Renamed branch ${promptDialog.oldBranchName} → ${promptValue.trim()}`,
+        ['branch', '-m', promptDialog.oldBranchName, promptValue.trim()]
+      );
     } else {
       await runGitOp(`Created tag ${promptValue.trim()}`, [
         'tag',
@@ -148,34 +218,47 @@ export const GitGraphView: React.FC = () => {
 
   return (
     <section
-      onClick={() => setContextMenu(null)}
+      onClick={() => {
+        setContextMenu(null);
+        setBranchDropdownRect(null);
+        setOrderDropdownRect(null);
+      }}
       className="flex-1 h-full flex flex-col min-w-0 bg-slate-950/25 backdrop-blur-md select-none"
     >
       {/* vscode-git-graph Control & Filter Bar */}
       <div className="h-11 px-3 flex items-center justify-between gap-2 bg-slate-950/50 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* Branch Filter */}
-          <div className="flex items-center gap-1.5 bg-white/[0.05] border border-white/10 rounded-lg px-2.5 py-1 text-xs">
+          {/* Custom Glassmorphic Branch & Remote Filter Dropdown */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOrderDropdownRect(null);
+              if (branchDropdownRect) {
+                setBranchDropdownRect(null);
+              } else {
+                const r = e.currentTarget.getBoundingClientRect();
+                setBranchDropdownRect({ left: r.left, top: r.bottom + 6 });
+                setBranchDropdownQuery('');
+              }
+            }}
+            className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/10 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 transition shrink-0"
+          >
             <GitBranch className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            <select
-              value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
-              className="bg-transparent text-slate-200 focus:outline-none text-xs cursor-pointer"
-            >
-              <option value="all" className="bg-slate-900 text-white">
-                All Branches & Remotes
-              </option>
-              {localBranches.map((b) => (
-                <option
-                  key={b.fullName}
-                  value={b.name}
-                  className="bg-slate-900 text-white"
-                >
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </div>
+            <span className="truncate max-w-[190px] font-medium">
+              {selectedBranches.length === 0
+                ? 'All Branches & Remotes'
+                : selectedBranches.length === 1
+                ? selectedBranches[0]
+                : `${selectedBranches.length} Branches Selected`}
+            </span>
+            {selectedBranches.length > 1 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-sky-500/25 text-sky-300 text-[10px] font-mono">
+                {selectedBranches.length}
+              </span>
+            )}
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+          </button>
 
           {/* Search Input */}
           <div className="relative flex-1 max-w-xs">
@@ -195,53 +278,33 @@ export const GitGraphView: React.FC = () => {
           </div>
         </div>
 
-        {/* Graph Style & Order Controls */}
+        {/* Order & View Controls */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Curved vs Angular Switcher */}
-          <div className="flex items-center rounded-lg bg-white/[0.04] p-0.5 border border-white/10 text-xs">
-            <button
-              onClick={() => setGraphStyle('curved')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md transition ${
-                graphStyle === 'curved'
-                  ? 'bg-sky-500/25 text-sky-200 font-medium'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Curved Bezier Graph Lines"
-            >
-              <Spline className="w-3.5 h-3.5" />
-              <span>Curved</span>
-            </button>
-            <button
-              onClick={() => setGraphStyle('angular')}
-              className={`flex items-center gap-1 px-2 py-1 rounded-md transition ${
-                graphStyle === 'angular'
-                  ? 'bg-sky-500/25 text-sky-200 font-medium'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-              title="Angular Straight Graph Lines"
-            >
-              <Waypoints className="w-3.5 h-3.5" />
-              <span>Angular</span>
-            </button>
-          </div>
-
-          {/* Commit Ordering */}
-          <select
-            value={commitOrdering}
-            onChange={(e) => setCommitOrdering(e.target.value as any)}
-            className="bg-white/[0.05] border border-white/10 rounded-lg px-2 py-1 text-xs text-slate-300 focus:outline-none cursor-pointer"
+          {/* Commit Ordering Custom Dropdown */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setBranchDropdownRect(null);
+              if (orderDropdownRect) {
+                setOrderDropdownRect(null);
+              } else {
+                const r = e.currentTarget.getBoundingClientRect();
+                setOrderDropdownRect({ left: r.left, top: r.bottom + 6 });
+              }
+            }}
+            className="flex items-center gap-1.5 bg-white/[0.05] hover:bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-slate-200 transition"
             title="Commit Ordering"
           >
-            <option value="date" className="bg-slate-900">
-              Date Order
-            </option>
-            <option value="topo" className="bg-slate-900">
-              Topo Order
-            </option>
-            <option value="author-date" className="bg-slate-900">
-              Author Date
-            </option>
-          </select>
+            <span>
+              {commitOrdering === 'topo'
+                ? 'Topo Order'
+                : commitOrdering === 'author-date'
+                ? 'Author Date'
+                : 'Date Order'}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+          </button>
 
           {/* First-Parent Toggle */}
           <button
@@ -288,7 +351,10 @@ export const GitGraphView: React.FC = () => {
       </div>
 
       {/* Scrollable Graph Canvas + Commit Rows */}
-      <div className="flex-1 overflow-auto relative">
+      <div
+        onScroll={() => contextMenu && setContextMenu(null)}
+        className="flex-1 overflow-auto relative"
+      >
         <div
           className="relative min-w-[680px]"
           style={{ height: graph.nodes.length * ROW_HEIGHT }}
@@ -309,7 +375,7 @@ export const GitGraphView: React.FC = () => {
                 ROW_HEIGHT,
                 COL_WIDTH,
                 PAD_LEFT,
-                graphStyle
+                'angular'
               );
               return (
                 <path
@@ -535,13 +601,16 @@ export const GitGraphView: React.FC = () => {
         </div>
       </div>
 
-      {/* Right-Click Context Menu (vscode-git-graph style) */}
-      {contextMenu && (
-        <div
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onClick={(e) => e.stopPropagation()}
-          className="fixed z-50 w-64 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl py-1.5 text-xs text-slate-200"
-        >
+      {/* Right-Click Context Menu rendered via Portal to document.body so backdrop-blur does not offset fixed coordinates */}
+      {contextMenu &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ top: menuPos.top, left: menuPos.left }}
+            onClick={(e) => e.stopPropagation()}
+            onContextMenu={(e) => e.preventDefault()}
+            className="fixed z-[9999] w-64 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl py-1.5 text-xs text-slate-200 select-none"
+          >
           <div className="px-3 py-1.5 border-b border-white/10 flex items-center justify-between">
             <span className="font-mono text-[11px] text-sky-400">
               {contextMenu.targetRef
@@ -585,12 +654,19 @@ export const GitGraphView: React.FC = () => {
               </button>
               <button
                 onClick={() => {
-                  runGitOp('Drop stash', [
-                    'stash',
-                    'drop',
-                    contextMenu.commit.stashSelector!,
-                  ]);
+                  const selector = contextMenu.commit.stashSelector!;
+                  const subject = contextMenu.commit.subject;
                   setContextMenu(null);
+                  requestConfirm({
+                    title: `Drop Stash '${selector}'`,
+                    description: `Are you sure you want to permanently drop stash '${selector}' (${subject})? This action cannot be undone.`,
+                    confirmLabel: 'Drop Stash',
+                    variant: 'danger',
+                    commandPreview: `git stash drop ${selector}`,
+                    onConfirm: async () => {
+                      await runGitOp('Drop stash', ['stash', 'drop', selector]);
+                    },
+                  });
                 }}
                 className="w-full px-3 py-1.5 text-left hover:bg-rose-500/20 text-rose-300 flex items-center gap-2"
               >
@@ -655,6 +731,97 @@ export const GitGraphView: React.FC = () => {
                 <span>Create Tag Here...</span>
               </button>
 
+              {contextMenu.targetRef?.type === 'local-branch' && (
+                <>
+                  <button
+                    onClick={() => {
+                      setPromptValue(contextMenu.targetRef!.name);
+                      setPromptDialog({
+                        title: `Rename Branch '${contextMenu.targetRef!.name}'`,
+                        placeholder: 'new-branch-name',
+                        commitHash: contextMenu.commit.hash,
+                        oldBranchName: contextMenu.targetRef!.name,
+                        mode: 'rename-branch',
+                      });
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-sky-500/20 flex items-center gap-2"
+                  >
+                    <GitBranch className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Rename Branch '{contextMenu.targetRef.name}'...</span>
+                  </button>
+                  {!contextMenu.targetRef.isCurrentHead && (
+                    <button
+                      onClick={() => {
+                        const branchName = contextMenu.targetRef!.name;
+                        setContextMenu(null);
+                        requestConfirm({
+                          title: `Delete Branch '${branchName}'`,
+                          description: `Are you sure you want to force-delete local branch '${branchName}'? Unmerged commits on this branch may become unreachable.`,
+                          confirmLabel: 'Delete Branch',
+                          variant: 'danger',
+                          commandPreview: `git branch -D ${branchName}`,
+                          onConfirm: async () => {
+                            await runGitOp(`Delete branch ${branchName}`, [
+                              'branch',
+                              '-D',
+                              branchName,
+                            ]);
+                          },
+                        });
+                      }}
+                      className="w-full px-3 py-1.5 text-left hover:bg-rose-500/20 text-rose-300 flex items-center gap-2"
+                    >
+                      <Undo2 className="w-3.5 h-3.5" />
+                      <span>Delete Branch '{contextMenu.targetRef.name}'</span>
+                    </button>
+                  )}
+                </>
+              )}
+
+              {contextMenu.targetRef?.type === 'tag' && (
+                <>
+                  <button
+                    onClick={() => {
+                      runGitOp(`Push tag ${contextMenu.targetRef!.name}`, [
+                        'push',
+                        'origin',
+                        contextMenu.targetRef!.name,
+                      ]);
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-sky-500/20 flex items-center gap-2"
+                  >
+                    <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Push Tag '{contextMenu.targetRef.name}' to Origin</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const tagName = contextMenu.targetRef!.name;
+                      setContextMenu(null);
+                      requestConfirm({
+                        title: `Delete Tag '${tagName}'`,
+                        description: `Are you sure you want to delete local tag '${tagName}'?`,
+                        confirmLabel: 'Delete Tag',
+                        variant: 'danger',
+                        commandPreview: `git tag -d ${tagName}`,
+                        onConfirm: async () => {
+                          await runGitOp(`Delete tag ${tagName}`, [
+                            'tag',
+                            '-d',
+                            tagName,
+                          ]);
+                        },
+                      });
+                    }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-rose-500/20 text-rose-300 flex items-center gap-2"
+                  >
+                    <Undo2 className="w-3.5 h-3.5" />
+                    <span>Delete Tag '{contextMenu.targetRef.name}'</span>
+                  </button>
+                </>
+              )}
+
               <div className="my-1 border-t border-white/10" />
 
               {/* Merge into Current Branch */}
@@ -709,12 +876,22 @@ export const GitGraphView: React.FC = () => {
               {/* Revert Commit */}
               <button
                 onClick={() => {
-                  runGitOp(`Revert ${contextMenu.commit.shortHash}`, [
-                    'revert',
-                    '--no-edit',
-                    contextMenu.commit.hash,
-                  ]);
+                  const commit = contextMenu.commit;
                   setContextMenu(null);
+                  requestConfirm({
+                    title: `Revert Commit ${commit.shortHash}`,
+                    description: `Create a new commit on '${currentBranch}' that reverses the changes introduced by ${commit.shortHash} ("${commit.subject}")?`,
+                    confirmLabel: 'Revert Commit',
+                    variant: 'warning',
+                    commandPreview: `git revert --no-edit ${commit.shortHash}`,
+                    onConfirm: async () => {
+                      await runGitOp(`Revert ${commit.shortHash}`, [
+                        'revert',
+                        '--no-edit',
+                        commit.hash,
+                      ]);
+                    },
+                  });
                 }}
                 className="w-full px-3 py-1.5 text-left hover:bg-sky-500/20 flex items-center gap-2"
               >
@@ -731,12 +908,22 @@ export const GitGraphView: React.FC = () => {
               <div className="flex items-center gap-1 px-2.5 pb-1">
                 <button
                   onClick={() => {
-                    runGitOp('Reset --soft', [
-                      'reset',
-                      '--soft',
-                      contextMenu.commit.hash,
-                    ]);
+                    const commit = contextMenu.commit;
                     setContextMenu(null);
+                    requestConfirm({
+                      title: `Soft Reset '${currentBranch}' to ${commit.shortHash}`,
+                      description: `Move HEAD of '${currentBranch}' to ${commit.shortHash} ("${commit.subject}"). All changes since that commit will be kept staged.`,
+                      confirmLabel: 'Reset --soft',
+                      variant: 'warning',
+                      commandPreview: `git reset --soft ${commit.shortHash}`,
+                      onConfirm: async () => {
+                        await runGitOp('Reset --soft', [
+                          'reset',
+                          '--soft',
+                          commit.hash,
+                        ]);
+                      },
+                    });
                   }}
                   className="flex-1 py-1 rounded bg-white/5 hover:bg-sky-500/20 text-[11px] text-sky-300"
                 >
@@ -744,12 +931,22 @@ export const GitGraphView: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    runGitOp('Reset --mixed', [
-                      'reset',
-                      '--mixed',
-                      contextMenu.commit.hash,
-                    ]);
+                    const commit = contextMenu.commit;
                     setContextMenu(null);
+                    requestConfirm({
+                      title: `Mixed Reset '${currentBranch}' to ${commit.shortHash}`,
+                      description: `Move HEAD of '${currentBranch}' to ${commit.shortHash} ("${commit.subject}") and unstage changes. Working directory files will be preserved.`,
+                      confirmLabel: 'Reset --mixed',
+                      variant: 'warning',
+                      commandPreview: `git reset --mixed ${commit.shortHash}`,
+                      onConfirm: async () => {
+                        await runGitOp('Reset --mixed', [
+                          'reset',
+                          '--mixed',
+                          commit.hash,
+                        ]);
+                      },
+                    });
                   }}
                   className="flex-1 py-1 rounded bg-white/5 hover:bg-amber-500/20 text-[11px] text-amber-300"
                 >
@@ -757,12 +954,22 @@ export const GitGraphView: React.FC = () => {
                 </button>
                 <button
                   onClick={() => {
-                    runGitOp('Reset --hard', [
-                      'reset',
-                      '--hard',
-                      contextMenu.commit.hash,
-                    ]);
+                    const commit = contextMenu.commit;
                     setContextMenu(null);
+                    requestConfirm({
+                      title: `Hard Reset '${currentBranch}' to ${commit.shortHash}`,
+                      description: `DANGER: Move '${currentBranch}' to ${commit.shortHash} ("${commit.subject}") and permanently destroy all uncommitted staged & working directory changes!`,
+                      confirmLabel: 'Hard Reset',
+                      variant: 'danger',
+                      commandPreview: `git reset --hard ${commit.shortHash}`,
+                      onConfirm: async () => {
+                        await runGitOp('Reset --hard', [
+                          'reset',
+                          '--hard',
+                          commit.hash,
+                        ]);
+                      },
+                    });
                   }}
                   className="flex-1 py-1 rounded bg-white/5 hover:bg-rose-500/25 text-[11px] text-rose-300"
                 >
@@ -810,45 +1017,235 @@ export const GitGraphView: React.FC = () => {
               <span>Inspect & Stage Working Changes</span>
             </button>
           )}
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
 
-      {/* Modal for Create Branch / Create Tag at Specific Commit */}
-      {promptDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <form
-            onSubmit={handlePromptSubmit}
-            className="w-full max-w-md rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl"
+      {/* Custom Branch & Remote Filter Dropdown Portal */}
+      {branchDropdownRect &&
+        createPortal(
+          <div
+            style={{ top: branchDropdownRect.top, left: branchDropdownRect.left }}
+            onClick={(e) => e.stopPropagation()}
+            className="fixed z-[9999] w-72 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-2 text-xs text-slate-200 select-none"
           >
-            <h3 className="text-sm font-semibold text-white mb-3">
-              {promptDialog.title}
-            </h3>
-            <input
-              type="text"
-              autoFocus
-              value={promptValue}
-              onChange={(e) => setPromptValue(e.target.value)}
-              placeholder={promptDialog.placeholder}
-              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-white/15 text-xs text-white mb-4 focus:outline-none focus:border-sky-400"
-            />
-            <div className="flex justify-end gap-2">
+            <div className="relative mb-2">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                autoFocus
+                value={branchDropdownQuery}
+                onChange={(e) => setBranchDropdownQuery(e.target.value)}
+                placeholder="Filter branches & remotes..."
+                className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-slate-950 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-400"
+              />
+            </div>
+
+            <div className="max-h-72 overflow-y-auto space-y-1">
               <button
                 type="button"
-                onClick={() => setPromptDialog(null)}
-                className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-white/10"
+                onClick={() => {
+                  clearBranchSelection();
+                }}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
+                  selectedBranches.length === 0
+                    ? 'bg-sky-500/20 text-sky-200 font-medium'
+                    : 'hover:bg-white/[0.07] text-slate-200'
+                }`}
               >
-                Cancel
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${
+                      selectedBranches.length === 0
+                        ? 'bg-sky-500 border-sky-400 text-white'
+                        : 'border-white/25 bg-slate-950'
+                    }`}
+                  >
+                    {selectedBranches.length === 0 && (
+                      <Check className="w-2.5 h-2.5 stroke-[3]" />
+                    )}
+                  </span>
+                  <GitBranch className="w-3.5 h-3.5 text-sky-400" />
+                  <span>All Branches & Remotes</span>
+                </span>
+                {selectedBranches.length > 0 && (
+                  <span className="text-[10px] text-sky-400 hover:underline">
+                    Reset
+                  </span>
+                )}
               </button>
-              <button
-                type="submit"
-                className="px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-medium text-white"
-              >
-                Create
-              </button>
+
+              <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Local Branches ({localBranches.length})
+              </div>
+              {localBranches
+                .filter((b) =>
+                  b.name.toLowerCase().includes(branchDropdownQuery.toLowerCase())
+                )
+                .map((b) => {
+                  const isChecked = selectedBranches.includes(b.name);
+                  return (
+                    <button
+                      key={b.fullName}
+                      type="button"
+                      onClick={() => toggleBranchSelection(b.name)}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
+                        isChecked
+                          ? 'bg-sky-500/20 text-sky-200 font-medium'
+                          : 'hover:bg-white/[0.07] text-slate-300'
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <span
+                          className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
+                            isChecked
+                              ? 'bg-sky-500 border-sky-400 text-white'
+                              : 'border-white/25 bg-slate-950'
+                          }`}
+                        >
+                          {isChecked && (
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          )}
+                        </span>
+                        <GitBranch className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span className="truncate">{b.name}</span>
+                        {b.isCurrentHead && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">
+                            HEAD
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+
+              {remoteBranches.length > 0 && (
+                <>
+                  <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Remote Branches ({remoteBranches.length})
+                  </div>
+                  {remoteBranches
+                    .filter((rb) =>
+                      rb.name
+                        .toLowerCase()
+                        .includes(branchDropdownQuery.toLowerCase())
+                    )
+                    .map((rb) => {
+                      const isChecked = selectedBranches.includes(rb.name);
+                      return (
+                        <button
+                          key={rb.fullName}
+                          type="button"
+                          onClick={() => toggleBranchSelection(rb.name)}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
+                            isChecked
+                              ? 'bg-sky-500/20 text-sky-200 font-medium'
+                              : 'hover:bg-white/[0.07] text-slate-300'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 truncate">
+                            <span
+                              className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
+                                isChecked
+                                  ? 'bg-sky-500 border-sky-400 text-white'
+                                  : 'border-white/25 bg-slate-950'
+                              }`}
+                            >
+                              {isChecked && (
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              )}
+                            </span>
+                            <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                            <span className="truncate font-mono text-[11px]">
+                              {rb.name}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                </>
+              )}
             </div>
-          </form>
-        </div>
-      )}
+          </div>,
+          document.body
+        )}
+
+      {/* Custom Commit Ordering Dropdown Portal */}
+      {orderDropdownRect &&
+        createPortal(
+          <div
+            style={{ top: orderDropdownRect.top, left: orderDropdownRect.left }}
+            onClick={(e) => e.stopPropagation()}
+            className="fixed z-[9999] w-44 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-1.5 text-xs text-slate-200 select-none"
+          >
+            {(
+              [
+                { id: 'date', label: 'Date Order' },
+                { id: 'topo', label: 'Topo Order' },
+                { id: 'author-date', label: 'Author Date' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  setCommitOrdering(opt.id);
+                  setOrderDropdownRect(null);
+                }}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
+                  commitOrdering === opt.id
+                    ? 'bg-sky-500/20 text-sky-200 font-medium'
+                    : 'hover:bg-white/[0.07] text-slate-300'
+                }`}
+              >
+                <span>{opt.label}</span>
+                {commitOrdering === opt.id && (
+                  <Check className="w-3.5 h-3.5 text-sky-400" />
+                )}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+
+      {/* Modal for Create Branch / Create Tag at Specific Commit */}
+      {promptDialog &&
+        createPortal(
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <form
+              onSubmit={handlePromptSubmit}
+              className="w-full max-w-md rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl"
+            >
+              <h3 className="text-sm font-semibold text-white mb-3">
+                {promptDialog.title}
+              </h3>
+              <input
+                type="text"
+                autoFocus
+                value={promptValue}
+                onChange={(e) => setPromptValue(e.target.value)}
+                placeholder={promptDialog.placeholder}
+                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-white/15 text-xs text-white mb-4 focus:outline-none focus:border-sky-400"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPromptDialog(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs text-slate-300 hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-medium text-white"
+                >
+                  Create
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body
+        )}
     </section>
   );
 };
