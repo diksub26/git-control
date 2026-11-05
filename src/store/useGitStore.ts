@@ -1406,7 +1406,11 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     refreshGitIdentity: async () => {
       const { tabs, activeTabId, accounts, remoteInfo } = get();
       const activeTab = tabs.find((t) => t.id === activeTabId);
-      const identity = await getGitConfigIdentity(activeTab?.path);
+      if (!activeTab?.path) return;
+      const identity = await getGitConfigIdentity(activeTab.path);
+
+      // Guard: Abort if user switched tabs while querying git config
+      if (get().activeTabId !== activeTabId) return;
 
       // Auto-import existing Global or Local Git Config identity into accounts list if not already saved
       const nextAccounts = [...accounts];
@@ -1482,6 +1486,9 @@ export const useGitStore = create<GitStoreState>((set, get) => {
               a.token
           )
         : null;
+
+      // Guard: Abort if user switched tabs
+      if (get().activeTabId !== activeTabId) return;
 
       if (matchedAccount?.token) {
         if (matchedAccount.token !== get().githubToken) {
@@ -1704,6 +1711,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         compareCommitHash: null,
         activeDiffRequest: null,
         activeDiffData: null,
+        pullRequests: [],
+        issues: [],
       });
 
       await get().refreshActiveRepo();
@@ -1727,6 +1736,9 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           selectedCommitHash: null,
           compareCommitHash: null,
           isRepoModalOpen: true,
+          pullRequests: [],
+          issues: [],
+          remoteInfo: null,
         });
         return;
       }
@@ -1748,6 +1760,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
               compareCommitHash: null,
               activeDiffRequest: null,
               activeDiffData: null,
+              pullRequests: [],
+              issues: [],
             }
           : {}),
       });
@@ -1780,6 +1794,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         compareCommitHash: null,
         activeDiffRequest: null,
         activeDiffData: null,
+        pullRequests: [],
+        issues: [],
       });
       await get().refreshActiveRepo();
     },
@@ -1849,6 +1865,9 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           firstParentOnly,
         });
 
+        // Guard: Abort if user switched tabs while loading repository state
+        if (get().activeTabId !== activeTabId) return;
+
         const validRefSet = new Set(state.refs.map((r) => r.name));
         const sanitizedSelectedBranches = get().selectedBranches.filter((b) =>
           validRefSet.has(b)
@@ -1891,13 +1910,20 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         if (selectedHash) {
           await get().selectCommit(selectedHash, false);
         }
-        get().refreshGitIdentity();
+
+        // CRITICAL FIX: Await git identity refresh before calling loadRemotePRsAndIssues,
+        // so that gitIdentity in store is guaranteed accurate for this active repo
+        await get().refreshGitIdentity();
+        if (get().activeTabId !== activeTabId) return;
+
         if (state.remoteInfo) {
           get().loadRemotePRsAndIssues();
         }
       } catch (err: any) {
-        set({ isLoading: false });
-        get().showToast(`Failed to load repository: ${err?.message || err}`, 'error');
+        if (get().activeTabId === activeTabId) {
+          set({ isLoading: false });
+          get().showToast(`Failed to load repository: ${err?.message || err}`, 'error');
+        }
       }
     },
 
@@ -2165,7 +2191,11 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       const { remoteInfo, accounts, gitIdentity, tabs, activeTabId } = get();
       if (!remoteInfo || remoteInfo.provider === 'unknown') return;
       const activeTab = tabs.find((t) => t.id === activeTabId);
+      if (!activeTab?.path) return;
       const isManual = Boolean(opts?.manual);
+
+      // Guard: Abort if active tab changed
+      if (get().activeTabId !== activeTabId) return;
 
       // STRICT: only the account linked to this repository is used.
       // Linked = account whose email matches the repo's effective git user.email,
@@ -2208,13 +2238,19 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         }
       }
 
+      // Guard: Abort if user switched tabs while resolving system token
+      if (get().activeTabId !== activeTabId) return;
+
       const accountLabel = linkedAccount
         ? linkedAccount.username || linkedAccount.email
         : gitIdentity.effectiveName || gitIdentity.effectiveEmail || '';
 
       const notify = (key: string, message: string) => {
+        // Only show notifications if the user manually requested a refresh (clicked the refresh button in UI).
+        // Background sync on tab switch or repo load should NEVER show intrusive error toasts!
+        if (!isManual) return;
         const fullKey = `${activeTab?.path || ''}|${key}`;
-        if (isManual || fullKey !== lastPrAuthErrorKey) {
+        if (fullKey !== lastPrAuthErrorKey) {
           lastPrAuthErrorKey = fullKey;
           get().showToast(message, 'error');
         }
