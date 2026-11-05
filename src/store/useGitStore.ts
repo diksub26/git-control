@@ -91,6 +91,7 @@ interface GitStoreState {
   runningOpLabel: string | null;
   currentBranch: string;
   headHash: string;
+  isHeadDetached: boolean;
   commits: GitCommit[];
   refs: GitRef[];
   workingFiles: WorkingFileChange[];
@@ -457,6 +458,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     runningOpLabel: null,
     currentBranch: 'main',
     headHash: '',
+    isHeadDetached: false,
     commits: [],
     refs: [],
     workingFiles: [],
@@ -1895,6 +1897,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         }
 
         const validRefSet = new Set(state.refs.map((r) => r.name));
+        validRefSet.add('HEAD');
+        validRefSet.add('HEAD (detached)');
         const sanitizedSelectedBranches = targetSelectedBranches.filter((b) =>
           b === '__ALL__' || validRefSet.has(b)
         );
@@ -1905,6 +1909,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
             ? {
                 ...t,
                 currentBranch: state.currentBranch,
+                headHash: state.headHash,
+                isHeadDetached: state.isHeadDetached,
                 uncommittedCount: state.workingFiles.length,
                 conflictCount,
                 selectedBranches: sanitizedSelectedBranches,
@@ -1924,6 +1930,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           isGitInitialized: state.isGitInitialized,
           currentBranch: state.currentBranch,
           headHash: state.headHash,
+          isHeadDetached: state.isHeadDetached,
           commits: state.commits,
           refs: state.refs,
           workingFiles: state.workingFiles,

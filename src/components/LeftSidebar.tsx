@@ -21,6 +21,7 @@ import {
   FileDiff,
   Loader2,
   UploadCloud,
+  Radio,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import { openExternalUrl } from '../services/gitService';
@@ -38,6 +39,8 @@ export const LeftSidebar: React.FC = () => {
     tabs,
     activeTabId,
     currentBranch,
+    headHash,
+    isHeadDetached,
     activeRemoteOp,
     selectedCommitHash,
     selectCommit,
@@ -190,6 +193,25 @@ export const LeftSidebar: React.FC = () => {
 
           {openSections.branches && (
             <div className="px-2 pb-2 space-y-0.5">
+              {/* Detached HEAD Indicator in Local Branches list */}
+              {isHeadDetached && headHash && (
+                <div
+                  onClick={() => selectCommit(headHash)}
+                  className="group flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs bg-amber-500/15 border border-amber-400/30 text-amber-200 font-medium cursor-pointer transition hover:bg-amber-500/25 mb-1"
+                  title={`Detached HEAD at commit ${headHash}. Click to jump to commit.`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                    <span className="truncate font-mono">
+                      HEAD ({headHash.slice(0, 7)})
+                    </span>
+                  </div>
+                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-400/20 text-amber-300 font-mono shrink-0">
+                    detached
+                  </span>
+                </div>
+              )}
+
               {localBranches.map((b) => (
                 <div
                   key={b.fullName}

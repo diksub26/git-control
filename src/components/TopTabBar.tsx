@@ -144,8 +144,16 @@ export const TopTabBar: React.FC = () => {
                 title={tab.path}
               >
                 <span className="font-medium truncate max-w-[130px]">{tab.name}</span>
-                <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono text-[10px]">
-                  {tab.currentBranch}
+                <span
+                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] ${
+                    tab.isHeadDetached
+                      ? 'bg-amber-500/15 text-amber-300 border border-amber-400/30'
+                      : 'bg-sky-500/15 text-sky-300'
+                  }`}
+                >
+                  {tab.isHeadDetached && tab.headHash
+                    ? `HEAD (${tab.headHash.slice(0, 7)})`
+                    : tab.currentBranch}
                 </span>
                 {tab.uncommittedCount > 0 && (
                   <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-medium">

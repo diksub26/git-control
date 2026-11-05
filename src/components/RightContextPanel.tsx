@@ -27,6 +27,8 @@ export const RightContextPanel: React.FC = () => {
     selectedCommitFiles,
     remoteInfo,
     currentBranch,
+    headHash,
+    isHeadDetached,
     activeRemoteOp,
     runningOpLabel,
     selectCommit,
@@ -261,7 +263,11 @@ export const RightContextPanel: React.FC = () => {
             rows={3}
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
-            placeholder={`Commit message on ${currentBranch}...`}
+            placeholder={
+              isHeadDetached && headHash
+                ? `Commit on detached HEAD (${headHash.slice(0, 7)})...`
+                : `Commit message on ${currentBranch}...`
+            }
             className="w-full px-3 py-2 rounded-xl bg-slate-900/90 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-400 resize-none"
           />
           <div className="flex items-center justify-between text-[11px] text-slate-400">
@@ -402,6 +408,17 @@ export const RightContextPanel: React.FC = () => {
           </h2>
         </div>
         <div className="flex items-center gap-1.5">
+          {selectedCommit.hash === headHash && (
+            <span
+              className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
+                isHeadDetached
+                  ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
+                  : 'bg-sky-500/20 border-sky-400/40 text-sky-300'
+              }`}
+            >
+              {isHeadDetached ? 'HEAD (DETACHED)' : 'CURRENT HEAD'}
+            </span>
+          )}
           <span className="font-mono text-xs text-sky-400">
             {selectedCommit.shortHash}
           </span>

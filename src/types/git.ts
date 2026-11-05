@@ -158,6 +158,8 @@ export interface RepoTab {
   name: string;
   path: string;
   currentBranch: string;
+  headHash?: string;
+  isHeadDetached?: boolean;
   uncommittedCount: number;
   conflictCount: number;
   selectedBranches?: string[];

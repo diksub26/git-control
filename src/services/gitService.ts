@@ -317,6 +317,7 @@ export interface FullRepoState {
   isGitInitialized: boolean;
   currentBranch: string;
   headHash: string;
+  isHeadDetached: boolean;
   commits: GitCommit[];
   refs: GitRef[];
   workingFiles: WorkingFileChange[];
@@ -376,6 +377,10 @@ export async function loadRepositoryState(
     (symbolicHeadRes.exitCode === 0 && symbolicHeadRes.stdout.trim()) ||
     (isGitInitialized ? 'main' : 'uninitialized');
   const headHash = headHashRes.exitCode === 0 ? headHashRes.stdout.trim() : '';
+  const isHeadDetached =
+    isGitInitialized &&
+    Boolean(headHash) &&
+    (symbolicHeadRes.exitCode !== 0 || headBranchRes.stdout.trim() === 'HEAD');
 
   // 2. Parse Refs
   const refs: GitRef[] = [];
@@ -439,11 +444,26 @@ export async function loadRepositoryState(
     addRefToCommit(targetHash, refObj);
   }
 
+  // 2b. If detached HEAD, inject synthetic HEAD ref so commit graph and badges reflect it
+  if (isHeadDetached && headHash) {
+    const headRef: GitRef = {
+      name: 'HEAD (detached)',
+      fullName: 'HEAD',
+      type: 'head',
+      commitHash: headHash,
+      isCurrentHead: true,
+    };
+    refs.unshift(headRef);
+    addRefToCommit(headHash, headRef);
+  }
+
   // 3. Parse Working Files
   const workingFiles = parseGitStatusPorcelain(statusRes.stdout);
 
   // 4. Fetch Git Log for Graph (only include selected branches that exist in this repo)
   const validRefNames = new Set(refs.map((r) => r.name));
+  validRefNames.add('HEAD');
+  validRefNames.add('HEAD (detached)');
   const validSelectedBranches = (options.selectedBranches || []).filter((b) =>
     b !== '__ALL__' && validRefNames.has(b)
   );
@@ -555,6 +575,7 @@ export async function loadRepositoryState(
     isGitInitialized,
     currentBranch,
     headHash,
+    isHeadDetached,
     commits,
     refs,
     workingFiles,

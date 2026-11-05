@@ -16,6 +16,7 @@ import {
   Check,
   Sparkles,
   ChevronDown,
+  Radio,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import {
@@ -43,6 +44,8 @@ export const GitGraphView: React.FC = () => {
     commits,
     refs,
     currentBranch,
+    headHash,
+    isHeadDetached,
     remoteInfo,
     selectedBranches,
     searchQuery,
@@ -359,20 +362,41 @@ export const GitGraphView: React.FC = () => {
               const isSelected =
                 selectedCommitHash === node.commit.hash ||
                 compareCommitHash === node.commit.hash;
+              const isHeadCommit = Boolean(headHash && node.commit.hash === headHash);
               const isMerge = node.commit.parents.length > 1;
 
               return (
                 <g key={`node-${node.commit.hash}`}>
+                  {/* Selection Ring */}
                   {isSelected && (
                     <circle
                       cx={cx}
                       cy={cy}
-                      r={8.5}
+                      r={isHeadCommit ? 11 : 8.5}
                       fill="none"
                       stroke="#38bdf8"
                       strokeWidth={2}
                       opacity={0.85}
                     />
+                  )}
+                  {/* Current Active HEAD Marker (Pulsing Halo & Center Bullseye) */}
+                  {isHeadCommit && (
+                    <>
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={8}
+                        fill="none"
+                        stroke={isHeadDetached ? '#f59e0b' : '#38bdf8'}
+                        strokeWidth={2}
+                        strokeDasharray={isHeadDetached ? '3 2' : undefined}
+                        opacity={0.95}
+                        className="animate-pulse"
+                      />
+                      {!node.commit.isUncommitted && (
+                        <circle cx={cx} cy={cy} r={1.6} fill="#ffffff" />
+                      )}
+                    </>
                   )}
                   {node.commit.isUncommitted ? (
                     <circle
@@ -429,6 +453,7 @@ export const GitGraphView: React.FC = () => {
               GRAPH_COLORS[colorIndex % GRAPH_COLORS.length];
             const isPrimarySelected = selectedCommitHash === commit.hash;
             const isCompareSelected = compareCommitHash === commit.hash;
+            const isHeadCommit = Boolean(headHash && commit.hash === headHash);
             const isSearchDimmed =
               matchingHashes !== null && !matchingHashes.has(commit.hash);
 
@@ -441,6 +466,12 @@ export const GitGraphView: React.FC = () => {
                 }
                 onContextMenu={(e) => handleContextMenu(e, commit)}
                 className={`flex items-center px-2 text-xs cursor-pointer border-b border-white/[0.03] transition-colors ${
+                  isHeadCommit
+                    ? isHeadDetached
+                      ? 'border-l-2 border-l-amber-400 bg-amber-500/[0.06]'
+                      : 'border-l-2 border-l-sky-400 bg-sky-500/[0.04]'
+                    : 'border-l-2 border-l-transparent'
+                } ${
                   isPrimarySelected
                     ? 'bg-sky-500/20 text-white'
                     : isCompareSelected
@@ -470,7 +501,7 @@ export const GitGraphView: React.FC = () => {
                     </span>
                   )}
 
-                  {/* Ref Badges (Branches, Remotes, Tags, Stashes) */}
+                  {/* Ref Badges (Branches, Remotes, Tags, Stashes, HEAD) */}
                   {commit.refs.map((ref) => (
                     <span
                       key={ref.fullName}
@@ -484,7 +515,9 @@ export const GitGraphView: React.FC = () => {
                           : undefined
                       }
                       className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0 border ${
-                        ref.type === 'local-branch'
+                        ref.type === 'head'
+                          ? 'bg-amber-500/25 border-amber-400/50 text-amber-200 shadow-sm shadow-amber-500/10 font-semibold'
+                          : ref.type === 'local-branch'
                           ? 'text-white shadow-sm'
                           : ref.type === 'remote-branch'
                           ? 'bg-slate-800/90 border-white/15 text-slate-300'
@@ -493,6 +526,9 @@ export const GitGraphView: React.FC = () => {
                           : 'bg-orange-500/20 border-orange-400/40 text-orange-200'
                       }`}
                     >
+                      {ref.type === 'head' && (
+                        <Radio className="w-3 h-3 shrink-0 text-amber-300 animate-pulse" />
+                      )}
                       {ref.type === 'local-branch' && (
                         <GitBranch className="w-3 h-3 shrink-0" />
                       )}
@@ -506,7 +542,11 @@ export const GitGraphView: React.FC = () => {
                         <Archive className="w-3 h-3 shrink-0 text-orange-300" />
                       )}
                       <span>
-                        {ref.isCurrentHead ? `HEAD → ${ref.name}` : ref.name}
+                        {ref.type === 'head'
+                          ? ref.name
+                          : ref.isCurrentHead
+                          ? `HEAD → ${ref.name}`
+                          : ref.name}
                       </span>
                     </span>
                   ))}
@@ -516,7 +556,7 @@ export const GitGraphView: React.FC = () => {
                     className={`truncate ${
                       commit.isUncommitted
                         ? 'font-semibold italic text-amber-300'
-                        : commit.refs.some((r) => r.isCurrentHead)
+                        : isHeadCommit || commit.refs.some((r) => r.isCurrentHead)
                         ? 'font-semibold text-white'
                         : ''
                     }`}
@@ -550,8 +590,22 @@ export const GitGraphView: React.FC = () => {
                 </div>
 
                 {/* Short Hash */}
-                <div className="w-20 shrink-0 px-2 text-right font-mono text-[11px] text-slate-400">
-                  {commit.shortHash}
+                <div className="w-24 shrink-0 px-2 text-right font-mono text-[11px]">
+                  {isHeadCommit ? (
+                    <span
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold ${
+                        isHeadDetached
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                          : 'bg-sky-500/20 text-sky-300 border border-sky-400/40'
+                      }`}
+                      title={`Active HEAD (${isHeadDetached ? 'Detached at ' + commit.shortHash : currentBranch})`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                      {commit.shortHash}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">{commit.shortHash}</span>
+                  )}
                 </div>
               </div>
             );
@@ -635,25 +689,46 @@ export const GitGraphView: React.FC = () => {
           ) : !contextMenu.commit.isUncommitted ? (
             <>
               {/* Checkout Branch or Commit */}
-              <button
-                onClick={() => {
-                  const target =
-                    contextMenu.targetRef?.type === 'local-branch'
-                      ? contextMenu.targetRef.name
-                      : contextMenu.commit.hash;
-                  runGitOp(`Checkout ${target}`, ['checkout', target]);
-                  setContextMenu(null);
-                }}
-                className="w-full px-3 py-1.5 text-left hover:bg-sky-500/20 flex items-center gap-2"
-              >
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span>
-                  Checkout{' '}
-                  {contextMenu.targetRef?.type === 'local-branch'
-                    ? `Branch '${contextMenu.targetRef.name}'`
-                    : `Commit (${contextMenu.commit.shortHash})`}
-                </span>
-              </button>
+              {(() => {
+                const isCurrentTarget =
+                  (contextMenu.targetRef?.type === 'local-branch' &&
+                    contextMenu.targetRef.name === currentBranch) ||
+                  contextMenu.targetRef?.type === 'head' ||
+                  (!contextMenu.targetRef && contextMenu.commit.hash === headHash);
+
+                return isCurrentTarget ? (
+                  <div className="w-full px-3 py-1.5 text-xs text-emerald-400 bg-emerald-500/10 flex items-center gap-2 select-none border-b border-white/5">
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="font-medium">
+                      Currently Checked Out (
+                      {isHeadDetached
+                        ? `HEAD @ ${contextMenu.commit.shortHash}`
+                        : currentBranch}
+                      )
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const target =
+                        contextMenu.targetRef?.type === 'local-branch'
+                          ? contextMenu.targetRef.name
+                          : contextMenu.commit.hash;
+                      runGitOp(`Checkout ${target}`, ['checkout', target]);
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-3 py-1.5 text-left hover:bg-sky-500/20 flex items-center gap-2"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      Checkout{' '}
+                      {contextMenu.targetRef?.type === 'local-branch'
+                        ? `Branch '${contextMenu.targetRef.name}'`
+                        : `Commit (${contextMenu.commit.shortHash})`}
+                    </span>
+                  </button>
+                );
+              })()}
 
               {/* Create Branch Here */}
               <button
@@ -835,10 +910,13 @@ export const GitGraphView: React.FC = () => {
               <button
                 onClick={() => {
                   const commit = contextMenu.commit;
+                  const activeLabel = isHeadDetached
+                    ? `HEAD (${commit.shortHash})`
+                    : currentBranch;
                   setContextMenu(null);
                   requestConfirm({
                     title: `Revert Commit ${commit.shortHash}`,
-                    description: `Create a new commit on '${currentBranch}' that reverses the changes introduced by ${commit.shortHash} ("${commit.subject}")?`,
+                    description: `Create a new commit on '${activeLabel}' that reverses the changes introduced by ${commit.shortHash} ("${commit.subject}")?`,
                     confirmLabel: 'Revert Commit',
                     variant: 'warning',
                     commandPreview: `git revert --no-edit ${commit.shortHash}`,
@@ -861,16 +939,19 @@ export const GitGraphView: React.FC = () => {
 
               {/* Reset Options */}
               <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-slate-400">
-                Reset '{currentBranch}' to Here:
+                Reset '{isHeadDetached ? 'HEAD' : currentBranch}' to Here:
               </div>
               <div className="flex items-center gap-1 px-2.5 pb-1">
                 <button
                   onClick={() => {
                     const commit = contextMenu.commit;
+                    const activeLabel = isHeadDetached
+                      ? 'HEAD'
+                      : currentBranch;
                     setContextMenu(null);
                     requestConfirm({
-                      title: `Soft Reset '${currentBranch}' to ${commit.shortHash}`,
-                      description: `Move HEAD of '${currentBranch}' to ${commit.shortHash} ("${commit.subject}"). All changes since that commit will be kept staged.`,
+                      title: `Soft Reset '${activeLabel}' to ${commit.shortHash}`,
+                      description: `Move HEAD of '${activeLabel}' to ${commit.shortHash} ("${commit.subject}"). All changes since that commit will be kept staged.`,
                       confirmLabel: 'Reset --soft',
                       variant: 'warning',
                       commandPreview: `git reset --soft ${commit.shortHash}`,
@@ -890,10 +971,13 @@ export const GitGraphView: React.FC = () => {
                 <button
                   onClick={() => {
                     const commit = contextMenu.commit;
+                    const activeLabel = isHeadDetached
+                      ? 'HEAD'
+                      : currentBranch;
                     setContextMenu(null);
                     requestConfirm({
-                      title: `Mixed Reset '${currentBranch}' to ${commit.shortHash}`,
-                      description: `Move HEAD of '${currentBranch}' to ${commit.shortHash} ("${commit.subject}") and unstage changes. Working directory files will be preserved.`,
+                      title: `Mixed Reset '${activeLabel}' to ${commit.shortHash}`,
+                      description: `Move HEAD of '${activeLabel}' to ${commit.shortHash} ("${commit.subject}") and unstage changes. Working directory files will be preserved.`,
                       confirmLabel: 'Reset --mixed',
                       variant: 'warning',
                       commandPreview: `git reset --mixed ${commit.shortHash}`,
@@ -913,10 +997,13 @@ export const GitGraphView: React.FC = () => {
                 <button
                   onClick={() => {
                     const commit = contextMenu.commit;
+                    const activeLabel = isHeadDetached
+                      ? 'HEAD'
+                      : currentBranch;
                     setContextMenu(null);
                     requestConfirm({
-                      title: `Hard Reset '${currentBranch}' to ${commit.shortHash}`,
-                      description: `DANGER: Move '${currentBranch}' to ${commit.shortHash} ("${commit.subject}") and permanently destroy all uncommitted staged & working directory changes!`,
+                      title: `Hard Reset '${activeLabel}' to ${commit.shortHash}`,
+                      description: `DANGER: Move '${activeLabel}' to ${commit.shortHash} ("${commit.subject}") and permanently destroy all uncommitted staged & working directory changes!`,
                       confirmLabel: 'Hard Reset',
                       variant: 'danger',
                       commandPreview: `git reset --hard ${commit.shortHash}`,

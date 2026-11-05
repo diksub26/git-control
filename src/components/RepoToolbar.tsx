@@ -20,6 +20,7 @@ import {
   Workflow,
   UploadCloud,
   ExternalLink,
+  Radio,
   X,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
@@ -31,6 +32,8 @@ export const RepoToolbar: React.FC = () => {
     activeTabId,
     refs,
     currentBranch,
+    headHash,
+    isHeadDetached,
     selectedBranches,
     activeRemoteOp,
     runningOpLabel,
@@ -52,6 +55,7 @@ export const RepoToolbar: React.FC = () => {
     setConsoleOpen,
     toggleBranchSelection,
     clearBranchSelection,
+    selectCommit,
     showToast,
   } = useGitStore();
 
@@ -230,9 +234,19 @@ export const RepoToolbar: React.FC = () => {
             <span className="max-w-[150px] truncate" title={activeTab?.path || activeTab?.name}>
               {activeTab?.name || 'Repository'}
             </span>
-            <span className="text-sky-300 font-mono text-[11px] font-normal truncate max-w-[140px]">
-              ({currentBranch || 'HEAD'})
-            </span>
+            {isHeadDetached && headHash ? (
+              <span
+                className="text-amber-300 bg-amber-500/15 border border-amber-400/30 px-1.5 py-0.5 rounded font-mono text-[11px] font-medium truncate max-w-[170px] inline-flex items-center gap-1"
+                title={`Detached HEAD at commit ${headHash}`}
+              >
+                <Radio className="w-2.5 h-2.5 text-amber-400 animate-pulse shrink-0" />
+                HEAD ({headHash.slice(0, 7)})
+              </span>
+            ) : (
+              <span className="text-sky-300 font-mono text-[11px] font-normal truncate max-w-[140px]">
+                ({currentBranch || 'HEAD'})
+              </span>
+            )}
             {remoteInfo?.webUrl ? (
               <button
                 type="button"
@@ -266,7 +280,11 @@ export const RepoToolbar: React.FC = () => {
                 ? 'bg-sky-500/20 border-sky-400/40 text-sky-200'
                 : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/10 text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed'
             }`}
-            title={`Filter & Switch Branch (Current Active: ${currentBranch || 'HEAD'})`}
+            title={`Filter & Switch Branch (Current Active: ${
+              isHeadDetached && headHash
+                ? `HEAD detached at ${headHash.slice(0, 7)}`
+                : currentBranch || 'HEAD'
+            })`}
           >
             <GitBranch className="w-3.5 h-3.5 text-sky-400" />
             <span className="font-mono text-xs max-w-[160px] truncate text-slate-100 font-semibold">
@@ -619,6 +637,40 @@ export const RepoToolbar: React.FC = () => {
                     <span className="text-xs">All Branches & Remotes</span>
                   </span>
                 </button>
+
+                {/* Detached HEAD Status Card */}
+                {isHeadDetached && headHash && (
+                  <div className="mx-1 my-1.5 p-2 rounded-lg bg-amber-500/10 border border-amber-400/30 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Radio className="w-3.5 h-3.5 text-amber-400 shrink-0 animate-pulse" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-amber-200 flex items-center gap-1.5">
+                          <span>Detached HEAD</span>
+                          <span className="px-1 py-0.2 rounded text-[9px] bg-amber-500/25 text-amber-300 font-mono">
+                            active
+                          </span>
+                        </div>
+                        <div
+                          className="text-[11px] font-mono text-slate-300 truncate"
+                          title={headHash}
+                        >
+                          at {headHash.slice(0, 7)}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowBranchMenu(false);
+                        selectCommit(headHash);
+                      }}
+                      className="px-2 py-1 rounded text-[10px] font-medium bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/30 transition shrink-0"
+                      title="Jump to this commit in Graph"
+                    >
+                      Jump
+                    </button>
+                  </div>
+                )}
 
                 {/* Local Branches Header */}
                 <div className="px-2 pt-2 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center justify-between">
