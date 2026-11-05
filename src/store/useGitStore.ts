@@ -25,6 +25,7 @@ import {
   clearLocalGitConfigIdentity,
   createRemotePullRequest,
   createRemoteRepositoryViaApi,
+  deleteSecureToken,
   detectInstalledIdes,
   execGit,
   fetchRemotePullRequestsAndIssues,
@@ -32,11 +33,13 @@ import {
   getCompareCommitsFiles,
   getFileDiff,
   getGitConfigIdentity,
+  getSecureToken,
   loadRepositoryState,
   onGitCommandLog,
   openInExternalEditor,
   RemoteApiError,
   resolveGitCredentialToken,
+  saveSecureToken,
   setGitConfigIdentity,
 } from '../services/gitService';
 
@@ -181,6 +184,7 @@ interface GitStoreState {
     initialCommitMessage?: string;
     pushAfterCreate?: boolean;
   }) => Promise<boolean>;
+  hydrateSecureTokens: () => Promise<void>;
   refreshGitIdentity: () => Promise<void>;
   saveGitAccount: (
     account: Omit<GitAccount, 'id' | 'lastUsedAt'> & { id?: string },
@@ -375,6 +379,12 @@ function loadInitialAccounts(): GitAccount[] {
   }
 }
 
+function saveAccountsToStorage(accounts: GitAccount[]) {
+  // Strip tokens before saving to localStorage to ensure zero plaintext secrets on disk
+  const sanitized = accounts.map(({ token, ...rest }) => rest);
+  localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(sanitized));
+}
+
 function loadInitialTabs(): RepoTab[] {
   try {
     const raw = localStorage.getItem(SESSION_TABS_KEY);
@@ -488,6 +498,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
 
     initStore: async () => {
       get().refreshDetectedIdes();
+      await get().hydrateSecureTokens();
       await get().refreshGitIdentity();
       const { tabs } = get();
       if (tabs.length === 0) {
@@ -1363,6 +1374,35 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       }
     },
 
+    hydrateSecureTokens: async () => {
+      const { accounts } = get();
+      const hydrated = await Promise.all(
+        accounts.map(async (acc) => {
+          // 1. Try to load token from OS native keyring (macOS Keychain / Windows Credential Manager)
+          const osToken = await getSecureToken(acc.id);
+          if (osToken) {
+            return { ...acc, token: osToken };
+          }
+          // 2. If OS keyring doesn't have it, but legacy localStorage still has it, migrate it!
+          if (acc.token) {
+            try {
+              await saveSecureToken(acc.id, acc.token);
+            } catch (err) {
+              console.error('Failed to migrate legacy token to OS keyring:', err);
+            }
+            return acc;
+          }
+          return acc;
+        })
+      );
+
+      // Clean legacy tokens from localStorage permanently
+      saveAccountsToStorage(hydrated);
+      localStorage.removeItem('git-control-gh-token');
+
+      set({ accounts: hydrated });
+    },
+
     refreshGitIdentity: async () => {
       const { tabs, activeTabId, accounts, remoteInfo } = get();
       const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -1430,7 +1470,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       ensureIdentityInAccounts(identity.localName, identity.localEmail);
 
       if (changed) {
-        localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(nextAccounts));
+        saveAccountsToStorage(nextAccounts);
       }
 
       // Sync active account token for PR/Issue fetching if available (ONLY for the active identity)
@@ -1471,11 +1511,28 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           a.email.toLowerCase() === accountInput.email.trim().toLowerCase()
       );
 
+      const accountId =
+        existingIdx >= 0
+          ? accounts[existingIdx].id
+          : `acc-${now}-${Math.random().toString(36).slice(2, 6)}`;
+
+      // Securely store token in OS native keyring (macOS Keychain / Windows Credential Manager)
+      if (accountInput.token && accountInput.token.trim()) {
+        try {
+          await saveSecureToken(accountId, accountInput.token.trim());
+        } catch (err) {
+          console.error('Failed to save secret to OS keyring:', err);
+        }
+      } else if (accountInput.token === '') {
+        try {
+          await deleteSecureToken(accountId);
+        } catch (err) {
+          console.error('Failed to remove secret from OS keyring:', err);
+        }
+      }
+
       const savedAccount: GitAccount = {
-        id:
-          existingIdx >= 0
-            ? accounts[existingIdx].id
-            : `acc-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        id: accountId,
         provider: accountInput.provider,
         name: accountInput.name.trim(),
         email: accountInput.email.trim(),
@@ -1484,7 +1541,14 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           accountInput.email.trim().split('@')[0],
         hostUrl: accountInput.hostUrl?.trim() || undefined,
         avatarUrl: accountInput.avatarUrl || undefined,
-        token: accountInput.token?.trim() || undefined,
+        token:
+          accountInput.token && accountInput.token.trim()
+            ? accountInput.token.trim()
+            : accountInput.token === ''
+            ? undefined
+            : existingIdx >= 0
+            ? accounts[existingIdx].token
+            : undefined,
         lastUsedAt: now,
       };
 
@@ -1493,13 +1557,13 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           ? accounts.map((a, idx) => (idx === existingIdx ? savedAccount : a))
           : [savedAccount, ...accounts];
 
-      localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(nextAccounts));
+      saveAccountsToStorage(nextAccounts);
+      localStorage.removeItem('git-control-gh-token');
 
       if (savedAccount.token) {
-        localStorage.setItem('git-control-gh-token', savedAccount.token);
         set({ accounts: nextAccounts, githubToken: savedAccount.token });
       } else {
-        set({ accounts: nextAccounts });
+        set({ accounts: nextAccounts, githubToken: '' });
       }
 
       if (applyScope === 'global' || applyScope === 'both') {
@@ -1549,15 +1613,11 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         const updatedAccounts = accounts.map((a) =>
           a.id === account.id ? { ...a, lastUsedAt: now } : a
         );
-        localStorage.setItem(
-          SAVED_ACCOUNTS_KEY,
-          JSON.stringify(updatedAccounts)
-        );
+        saveAccountsToStorage(updatedAccounts);
+        localStorage.removeItem('git-control-gh-token');
         if (account.token) {
-          localStorage.setItem('git-control-gh-token', account.token);
           set({ accounts: updatedAccounts, githubToken: account.token });
         } else {
-          localStorage.removeItem('git-control-gh-token');
           set({ accounts: updatedAccounts, githubToken: '' });
         }
         await get().refreshGitIdentity();
@@ -1586,8 +1646,9 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
 
     removeGitAccount: (accountId) => {
+      deleteSecureToken(accountId).catch(() => {});
       const updated = get().accounts.filter((a) => a.id !== accountId);
-      localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(updated));
+      saveAccountsToStorage(updated);
       set({ accounts: updated });
       get().showToast('Removed Git account from saved list', 'info');
     },

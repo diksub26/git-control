@@ -229,6 +229,46 @@ export async function pickIdeExecutable(): Promise<string | null> {
   return null;
 }
 
+const webMemoryKeyring = new Map<string, string>();
+
+export async function saveSecureToken(
+  accountId: string,
+  token: string
+): Promise<void> {
+  if (isTauriRuntime()) {
+    await invoke('save_secure_token', { accountId, token });
+    return;
+  }
+  webMemoryKeyring.set(accountId, token);
+}
+
+export async function getSecureToken(
+  accountId: string
+): Promise<string | null> {
+  if (isTauriRuntime()) {
+    try {
+      return await invoke<string | null>('get_secure_token', { accountId });
+    } catch {
+      return null;
+    }
+  }
+  return webMemoryKeyring.get(accountId) || null;
+}
+
+export async function deleteSecureToken(
+  accountId: string
+): Promise<void> {
+  if (isTauriRuntime()) {
+    try {
+      await invoke('delete_secure_token', { accountId });
+      return;
+    } catch {
+      return;
+    }
+  }
+  webMemoryKeyring.delete(accountId);
+}
+
 export async function resolveGitCredentialToken(
   repoPath: string,
   host: string

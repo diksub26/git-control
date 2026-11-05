@@ -191,6 +191,42 @@ async fn resolve_git_credential_token(repo_path: String, host: String) -> Option
     .flatten()
 }
 
+#[tauri::command]
+async fn save_secure_token(account_id: String, token: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let entry = keyring::Entry::new("com.gitcontrol.desktop", &account_id)
+            .map_err(|e| format!("Failed to create keyring entry: {}", e))?;
+        entry
+            .set_password(&token)
+            .map_err(|e| format!("Failed to save secret to OS keyring: {}", e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn get_secure_token(account_id: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let entry = keyring::Entry::new("com.gitcontrol.desktop", &account_id).ok()?;
+        entry.get_password().ok()
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+#[tauri::command]
+async fn delete_secure_token(account_id: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Ok(entry) = keyring::Entry::new("com.gitcontrol.desktop", &account_id) {
+            let _ = entry.delete_credential();
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectedIde {
@@ -979,6 +1015,9 @@ pub fn run() {
             pick_executable,
             detect_installed_ides,
             resolve_git_credential_token,
+            save_secure_token,
+            get_secure_token,
+            delete_secure_token,
             read_conflict_file,
             write_conflict_file,
             open_in_external_editor,
