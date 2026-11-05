@@ -23,6 +23,7 @@ import {
   ChevronDown,
   Bot,
   GitPullRequest,
+  Workflow,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import { pickRepositoryFolder } from '../services/gitService';
@@ -50,6 +51,7 @@ export const TopTabBar: React.FC = () => {
     setAccountModalOpen,
     setPublishModalOpen,
     setCreatePRModalOpen,
+    setWorkflowModalOpen,
     setIdeModalOpen,
     openActiveRepoInIde,
     openActiveRepoInAiHarness,
@@ -296,6 +298,15 @@ export const TopTabBar: React.FC = () => {
           >
             <Archive className="w-3.5 h-3.5 text-amber-400" />
             <span>Stash</span>
+          </button>
+
+          <button
+            onClick={() => setWorkflowModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-amber-200 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/30 transition"
+            title="Git Workflows & Sequential Command Macros (e.g. fetch -p → pull origin main → push -f)"
+          >
+            <Workflow className="w-3.5 h-3.5 text-amber-400" />
+            <span>Workflows</span>
           </button>
 
           {remoteInfo ? (

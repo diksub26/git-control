@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import {
+  ActiveWorkflowRun,
   CommandLogEntry,
   CommitFileChange,
   FileDiffData,
@@ -8,6 +9,8 @@ import {
   GitConfigIdentity,
   GitRef,
   GitSubmodule,
+  GitWorkflow,
+  GitWorkflowStep,
   GitWorktree,
   GraphStyle,
   IdeConfig,
@@ -15,6 +18,7 @@ import {
   RemoteIssue,
   RemotePullRequest,
   RepoTab,
+  WorkflowStepResult,
   WorkingFileChange,
 } from '../types/git';
 import {
@@ -31,6 +35,7 @@ import {
   loadRepositoryState,
   onGitCommandLog,
   openInExternalEditor,
+  RemoteApiError,
   resolveGitCredentialToken,
   setGitConfigIdentity,
 } from '../services/gitService';
@@ -65,6 +70,9 @@ interface GitStoreState {
   isAccountModalOpen: boolean;
   isPublishModalOpen: boolean;
   isCreatePRModalOpen: boolean;
+  isWorkflowModalOpen: boolean;
+  workflows: GitWorkflow[];
+  activeWorkflowRun: ActiveWorkflowRun | null;
   isIdeModalOpen: boolean;
   ideModalInitialFilter: 'all' | 'ide' | 'ai-harness';
   detectedIdes: IdeConfig[];
@@ -121,6 +129,13 @@ interface GitStoreState {
   setAccountModalOpen: (open: boolean) => void;
   setPublishModalOpen: (open: boolean) => void;
   setCreatePRModalOpen: (open: boolean) => void;
+  setWorkflowModalOpen: (open: boolean) => void;
+  saveWorkflow: (
+    workflow: Omit<GitWorkflow, 'id' | 'createdAt'> & { id?: string }
+  ) => void;
+  deleteWorkflow: (workflowId: string) => void;
+  clearWorkflowRun: () => void;
+  runWorkflow: (workflowId: string) => Promise<boolean>;
   createPullRequest: (params: {
     title: string;
     body?: string;
@@ -214,7 +229,7 @@ interface GitStoreState {
   unstageAll: () => Promise<void>;
   discardFile: (filePath: string, isUntracked?: boolean) => Promise<void>;
   commitChanges: (message: string, amend?: boolean, signoff?: boolean) => Promise<boolean>;
-  loadRemotePRsAndIssues: () => Promise<void>;
+  loadRemotePRsAndIssues: (opts?: { manual?: boolean }) => Promise<void>;
 }
 
 const SESSION_TABS_KEY = 'git-control-session-tabs';
@@ -225,6 +240,107 @@ const DEFAULT_IDE_KEY = 'git-control-default-ide-v1';
 const DEFAULT_AI_HARNESS_KEY = 'git-control-default-ai-harness-v1';
 const CUSTOM_IDES_KEY = 'git-control-custom-ides-v1';
 const CUSTOM_IDE_PATHS_KEY = 'git-control-ide-paths-v1';
+const SAVED_WORKFLOWS_KEY = 'git-control-workflows-v1';
+
+const DEFAULT_WORKFLOWS: GitWorkflow[] = [
+  {
+    id: 'wf-sync-main-force-push',
+    name: 'Sync Main & Force Push',
+    description:
+      'Prune remote refs, pull latest changes from origin/main, and force-push current branch.',
+    scope: 'global',
+    confirmBeforeRun: true,
+    createdAt: 1700000000000,
+    steps: [
+      { id: 'step-1', command: 'git fetch -p' },
+      { id: 'step-2', command: 'git pull origin main' },
+      { id: 'step-3', command: 'git push -f' },
+    ],
+  },
+  {
+    id: 'wf-rebase-main-safe-force',
+    name: 'Rebase onto Main & Push (--force-with-lease)',
+    description:
+      'Fetch pruned refs, rebase current branch onto origin/main, and push safely with --force-with-lease.',
+    scope: 'global',
+    confirmBeforeRun: true,
+    createdAt: 1700000001000,
+    steps: [
+      { id: 'step-1', command: 'git fetch --all --prune' },
+      { id: 'step-2', command: 'git pull --rebase origin main' },
+      { id: 'step-3', command: 'git push --force-with-lease origin ${branch}' },
+    ],
+  },
+  {
+    id: 'wf-fetch-prune-pull',
+    name: 'Fetch Prune & Fast-Forward Pull',
+    description:
+      'Clean up deleted remote branches and fast-forward pull the current branch.',
+    scope: 'global',
+    confirmBeforeRun: false,
+    createdAt: 1700000002000,
+    steps: [
+      { id: 'step-1', command: 'git fetch -p' },
+      { id: 'step-2', command: 'git pull --ff-only' },
+    ],
+  },
+];
+
+function loadInitialWorkflows(): GitWorkflow[] {
+  try {
+    const raw = localStorage.getItem(SAVED_WORKFLOWS_KEY);
+    if (!raw) return DEFAULT_WORKFLOWS;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0
+      ? parsed
+      : DEFAULT_WORKFLOWS;
+  } catch {
+    return DEFAULT_WORKFLOWS;
+  }
+}
+
+export function parseGitCommandArgs(
+  rawCommand: string,
+  currentBranch: string
+): string[] {
+  const expanded = rawCommand
+    .trim()
+    .replace(/\$\{branch\}|\{branch\}/gi, currentBranch || 'main');
+  const tokens: string[] = [];
+  let current = '';
+  let inQuote: '"' | "'" | null = null;
+
+  for (let i = 0; i < expanded.length; i++) {
+    const ch = expanded[i];
+    if (inQuote) {
+      if (ch === inQuote) {
+        inQuote = null;
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"' || ch === "'") {
+      inQuote = ch;
+    } else if (/\s/.test(ch)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+    } else {
+      current += ch;
+    }
+  }
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  if (tokens.length > 0 && tokens[0].toLowerCase() === 'git') {
+    tokens.shift();
+  }
+  return tokens;
+}
+
+// Last PR/Issue auth error shown, so background auto-refreshes do not spam the same toast
+let lastPrAuthErrorKey = '';
 
 function loadInitialCustomIdes(): IdeConfig[] {
   try {
@@ -312,6 +428,9 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     isAccountModalOpen: false,
     isPublishModalOpen: false,
     isCreatePRModalOpen: false,
+    isWorkflowModalOpen: false,
+    workflows: loadInitialWorkflows(),
+    activeWorkflowRun: null,
     isIdeModalOpen: false,
     ideModalInitialFilter: 'all',
     detectedIdes: [],
@@ -646,6 +765,244 @@ export const useGitStore = create<GitStoreState>((set, get) => {
 
     setCreatePRModalOpen: (isCreatePRModalOpen: boolean) => {
       set({ isCreatePRModalOpen });
+    },
+
+    setWorkflowModalOpen: (isWorkflowModalOpen: boolean) => {
+      set({ isWorkflowModalOpen });
+    },
+
+    saveWorkflow: (workflowInput) => {
+      const { workflows, tabs, activeTabId } = get();
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      const now = Date.now();
+      const id =
+        workflowInput.id ||
+        `wf-${now}-${Math.random().toString(36).slice(2, 6)}`;
+
+      const cleanedSteps: GitWorkflowStep[] = workflowInput.steps
+        .map((s, idx) => ({
+          id: s.id || `step-${idx + 1}-${now}`,
+          command: s.command.trim(),
+          continueOnError: Boolean(s.continueOnError),
+        }))
+        .filter((s) => s.command.length > 0);
+
+      if (!workflowInput.name.trim() || cleanedSteps.length === 0) {
+        get().showToast(
+          'Workflow requires a name and at least one command step',
+          'error'
+        );
+        return;
+      }
+
+      const entry: GitWorkflow = {
+        id,
+        name: workflowInput.name.trim(),
+        description: workflowInput.description?.trim() || undefined,
+        scope: workflowInput.scope,
+        repoPath:
+          workflowInput.scope === 'repo'
+            ? workflowInput.repoPath || activeTab?.path
+            : undefined,
+        steps: cleanedSteps,
+        confirmBeforeRun: Boolean(workflowInput.confirmBeforeRun),
+        createdAt: now,
+      };
+
+      const existsIdx = workflows.findIndex((w) => w.id === id);
+      const nextWorkflows =
+        existsIdx >= 0
+          ? workflows.map((w, idx) => (idx === existsIdx ? entry : w))
+          : [entry, ...workflows];
+
+      localStorage.setItem(SAVED_WORKFLOWS_KEY, JSON.stringify(nextWorkflows));
+      set({ workflows: nextWorkflows });
+      get().showToast(`Saved workflow '${entry.name}'`, 'success');
+    },
+
+    deleteWorkflow: (workflowId: string) => {
+      const { workflows } = get();
+      const target = workflows.find((w) => w.id === workflowId);
+      const next = workflows.filter((w) => w.id !== workflowId);
+      localStorage.setItem(SAVED_WORKFLOWS_KEY, JSON.stringify(next));
+      set({ workflows: next });
+      get().showToast(
+        `Deleted workflow '${target?.name || workflowId}'`,
+        'info'
+      );
+    },
+
+    clearWorkflowRun: () => {
+      set({ activeWorkflowRun: null });
+    },
+
+    runWorkflow: async (workflowId: string) => {
+      const {
+        workflows,
+        tabs,
+        activeTabId,
+        currentBranch,
+        accounts,
+        remoteInfo,
+        gitIdentity,
+      } = get();
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      const wf = workflows.find((w) => w.id === workflowId);
+      if (!activeTab || !wf) return false;
+
+      const initialResults: WorkflowStepResult[] = wf.steps.map((s) => ({
+        stepId: s.id,
+        command: s.command.replace(
+          /\$\{branch\}|\{branch\}/gi,
+          currentBranch || 'main'
+        ),
+        status: 'pending',
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+        exitCode: null,
+      }));
+
+      set({
+        activeWorkflowRun: {
+          workflowId: wf.id,
+          workflowName: wf.name,
+          isRunning: true,
+          currentStepIndex: 0,
+          stepResults: initialResults,
+        },
+        runningOpLabel: `Running workflow '${wf.name}' (1/${wf.steps.length})`,
+      });
+
+      const matchedAccount =
+        (remoteInfo &&
+          accounts.find(
+            (a) =>
+              a.token &&
+              a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
+          )) ||
+        accounts.find(
+          (a) =>
+            a.token &&
+            a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
+        ) ||
+        (remoteInfo &&
+          accounts.find(
+            (a) => a.token && a.provider === remoteInfo.provider
+          ));
+
+      let allSucceeded = true;
+
+      try {
+        for (let idx = 0; idx < wf.steps.length; idx++) {
+          const step = wf.steps[idx];
+          const parsedArgs = parseGitCommandArgs(step.command, currentBranch);
+          if (parsedArgs.length === 0) continue;
+
+          const sub = parsedArgs[0]?.toLowerCase();
+          const isRemoteStep =
+            sub === 'fetch' || sub === 'pull' || sub === 'push';
+
+          let finalArgs = parsedArgs;
+          if (isRemoteStep && matchedAccount?.token) {
+            const authUser = matchedAccount.username || 'x-access-token';
+            const basicToken = btoa(`${authUser}:${matchedAccount.token}`);
+            finalArgs = [
+              '-c',
+              'credential.helper=',
+              '-c',
+              `http.extraHeader=Authorization: Basic ${basicToken}`,
+              ...parsedArgs,
+            ];
+          }
+
+          set((s) => {
+            if (!s.activeWorkflowRun) return {};
+            const updatedResults = s.activeWorkflowRun.stepResults.map(
+              (r, rIdx) => (rIdx === idx ? { ...r, status: 'running' as const } : r)
+            );
+            return {
+              runningOpLabel: `Workflow '${wf.name}' (${idx + 1}/${
+                wf.steps.length
+              }): git ${parsedArgs.join(' ')}`,
+              activeRemoteOp:
+                sub === 'fetch'
+                  ? 'fetch'
+                  : sub === 'pull'
+                  ? 'pull'
+                  : sub === 'push'
+                  ? 'push'
+                  : null,
+              activeWorkflowRun: {
+                ...s.activeWorkflowRun,
+                currentStepIndex: idx,
+                stepResults: updatedResults,
+              },
+            };
+          });
+
+          const res = await execGit(activeTab.path, finalArgs);
+          const stepOk = res.exitCode === 0;
+
+          set((s) => {
+            if (!s.activeWorkflowRun) return {};
+            const updatedResults = s.activeWorkflowRun.stepResults.map(
+              (r, rIdx) => {
+                if (rIdx === idx) {
+                  return {
+                    ...r,
+                    status: stepOk ? ('success' as const) : ('error' as const),
+                    stdout: res.stdout,
+                    stderr: res.stderr,
+                    durationMs: res.durationMs,
+                    exitCode: res.exitCode,
+                  };
+                }
+                if (!stepOk && !step.continueOnError && rIdx > idx) {
+                  return { ...r, status: 'skipped' as const };
+                }
+                return r;
+              }
+            );
+            return {
+              activeWorkflowRun: {
+                ...s.activeWorkflowRun,
+                stepResults: updatedResults,
+              },
+            };
+          });
+
+          if (!stepOk) {
+            allSucceeded = false;
+            if (!step.continueOnError) {
+              get().showToast(
+                `Workflow '${wf.name}' stopped at step ${idx + 1} (${
+                  step.command
+                }): ${res.stderr.trim() || res.stdout.trim()}`,
+                'error'
+              );
+              break;
+            }
+          }
+        }
+
+        if (allSucceeded) {
+          get().showToast(
+            `Workflow '${wf.name}' completed all ${wf.steps.length} steps!`,
+            'success'
+          );
+        }
+        await get().refreshActiveRepo();
+        return allSucceeded;
+      } finally {
+        set((s) => ({
+          runningOpLabel: null,
+          activeRemoteOp: null,
+          activeWorkflowRun: s.activeWorkflowRun
+            ? { ...s.activeWorkflowRun, isRunning: false }
+            : null,
+        }));
+      }
     },
 
     createPullRequest: async (params) => {
@@ -1692,51 +2049,97 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       return await get().runGitOp('Commit', args);
     },
 
-    loadRemotePRsAndIssues: async () => {
-      const { remoteInfo, githubToken, accounts, gitIdentity, tabs, activeTabId } =
-        get();
+    loadRemotePRsAndIssues: async (opts) => {
+      const { remoteInfo, accounts, gitIdentity, tabs, activeTabId } = get();
       if (!remoteInfo || remoteInfo.provider === 'unknown') return;
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      const isManual = Boolean(opts?.manual);
+
+      // STRICT: only the account linked to this repository is used.
+      // Linked = account username equals the remote owner, otherwise the account whose
+      // email matches the repo's effective git user.email (same provider).
+      // No fallback to other saved accounts, cached tokens, or system credentials.
+      const linkedAccount =
+        accounts.find(
+          (a) =>
+            a.provider === remoteInfo.provider &&
+            a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
+        ) ||
+        accounts.find(
+          (a) =>
+            a.provider === remoteInfo.provider &&
+            Boolean(gitIdentity.effectiveEmail) &&
+            a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
+        );
+      const linkedToken = linkedAccount?.token?.trim() || '';
+      const accountLabel = linkedAccount
+        ? linkedAccount.username || linkedAccount.email
+        : '';
+
+      const notify = (key: string, message: string) => {
+        const fullKey = `${activeTab?.path || ''}|${key}`;
+        if (isManual || fullKey !== lastPrAuthErrorKey) {
+          lastPrAuthErrorKey = fullKey;
+          get().showToast(message, 'error');
+        }
+      };
+
       set((s) => ({
         activeRemoteOp: s.activeRemoteOp || 'pr-sync',
       }));
-      try {
-        const activeTab = tabs.find((t) => t.id === activeTabId);
-        const matchedAccount =
-          accounts.find(
-            (a) =>
-              a.token &&
-              a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
-          ) ||
-          accounts.find(
-            (a) =>
-              a.token &&
-              a.provider === remoteInfo.provider &&
-              a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
-          ) ||
-          accounts.find((a) => a.token && a.provider === remoteInfo.provider) ||
-          accounts.find((a) => Boolean(a.token));
 
-        let tokenToUse = matchedAccount?.token || githubToken;
-        if (!tokenToUse) {
-          const host =
-            remoteInfo.provider === 'gitlab' ? 'gitlab.com' : 'github.com';
-          const sysToken = await resolveGitCredentialToken(
-            activeTab?.path || '',
-            host
-          );
-          if (sysToken) {
-            tokenToUse = sysToken;
-            set({ githubToken: sysToken });
+      try {
+        let result: { pullRequests: RemotePullRequest[]; issues: RemoteIssue[] } | null =
+          null;
+
+        if (linkedToken) {
+          try {
+            result = await fetchRemotePullRequestsAndIssues(remoteInfo, linkedToken);
+          } catch (err: any) {
+            const status = err instanceof RemoteApiError ? err.status : 0;
+            notify(
+              `token:${accountLabel}:${status}`,
+              status
+                ? `Token akun ${accountLabel} ditolak (${status}${
+                    err?.message ? `: ${err.message}` : ''
+                  }), perbarui di Account Manager`
+                : `Gagal memuat PRs & Issues dengan akun ${accountLabel}: ${
+                    err?.message || err
+                  }`
+            );
           }
         }
 
-        const { pullRequests, issues } = await fetchRemotePullRequestsAndIssues(
-          remoteInfo,
-          tokenToUse
-        );
-        set({ pullRequests, issues });
-      } catch {
-        // Ignore network errors silently
+        // Anonymous access (no identity attached) only for public repositories
+        if (!result) {
+          try {
+            result = await fetchRemotePullRequestsAndIssues(remoteInfo);
+            if (!linkedToken) lastPrAuthErrorKey = '';
+          } catch (err: any) {
+            if (!linkedToken) {
+              const status = err instanceof RemoteApiError ? err.status : 0;
+              notify(
+                `noaccount:${status}`,
+                linkedAccount
+                  ? `Akun ${accountLabel} belum punya token untuk ${remoteInfo.owner}/${remoteInfo.repo}${
+                      status ? ` (${status})` : ''
+                    }, tambahkan token di Account Manager`
+                  : `Tidak ada akun yang terhubung ke ${remoteInfo.owner}/${remoteInfo.repo}${
+                      status ? ` (${status})` : ''
+                    }, tambahkan akun di Account Manager`
+              );
+            }
+          }
+        } else {
+          lastPrAuthErrorKey = '';
+        }
+
+        // Ignore stale responses if the user switched repository tabs meanwhile
+        if (get().activeTabId !== activeTabId) return;
+        set({
+          pullRequests: result?.pullRequests || [],
+          issues: result?.issues || [],
+        });
       } finally {
         set((s) => ({
           activeRemoteOp: s.activeRemoteOp === 'pr-sync' ? null : s.activeRemoteOp,
