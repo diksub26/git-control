@@ -15,7 +15,6 @@ import { useGitStore } from '../store/useGitStore';
 import {
   applyHunkAction,
   detectLanguageFromPath,
-  openInExternalEditor,
   readConflictFileContent,
   resolveConflictBlocks,
   writeConflictFileContent,
@@ -29,8 +28,12 @@ export const DiffAndConflictModal: React.FC = () => {
     activeDiffRequest,
     activeDiffData,
     diffViewMode,
+    detectedIdes,
+    customIdes,
+    defaultIdeId,
     setDiffViewMode,
     openFileDiff,
+    openActiveRepoInIde,
     refreshActiveRepo,
     stageFile,
     showToast,
@@ -56,6 +59,12 @@ export const DiffAndConflictModal: React.FC = () => {
   const isWorkingMode =
     activeDiffRequest.mode === 'working-unstaged' ||
     activeDiffRequest.mode === 'working-staged';
+
+  const targetIdeId =
+    activeTab.preferredIdeId || defaultIdeId || 'vscode';
+  const activeIdeName =
+    [...detectedIdes, ...customIdes].find((i) => i.id === targetIdeId)?.name ||
+    (targetIdeId === 'vscode' ? 'VS Code' : targetIdeId);
 
   const executeHunkOp = async (
     hunk: DiffHunk,
@@ -149,17 +158,11 @@ export const DiffAndConflictModal: React.FC = () => {
                   Accept Both
                 </button>
                 <button
-                  onClick={() =>
-                    openInExternalEditor(
-                      activeTab.path,
-                      activeDiffRequest.filePath,
-                      'vscode'
-                    )
-                  }
+                  onClick={() => openActiveRepoInIde(activeDiffRequest.filePath)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-slate-200"
                 >
                   <Code2 className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Open in VS Code</span>
+                  <span>Open in {activeIdeName}</span>
                 </button>
                 <button
                   onClick={handleSaveAndResolveConflict}
@@ -197,17 +200,11 @@ export const DiffAndConflictModal: React.FC = () => {
                 </div>
 
                 <button
-                  onClick={() =>
-                    openInExternalEditor(
-                      activeTab.path,
-                      activeDiffRequest.filePath,
-                      'vscode'
-                    )
-                  }
+                  onClick={() => openActiveRepoInIde(activeDiffRequest.filePath)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-slate-200"
                 >
                   <Code2 className="w-3.5 h-3.5 text-blue-400" />
-                  <span>Open in VS Code</span>
+                  <span>Open in {activeIdeName}</span>
                 </button>
               </>
             )}

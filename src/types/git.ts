@@ -162,6 +162,19 @@ export interface RepoTab {
   conflictCount: number;
   selectedBranches?: string[];
   searchQuery?: string;
+  preferredIdeId?: string;
+  preferredAiHarnessId?: string;
+}
+
+export interface IdeConfig {
+  id: string;
+  name: string;
+  category: 'ide' | 'ai-harness';
+  launchMode: 'gui' | 'terminal-cli';
+  command: string;
+  executablePath: string;
+  installed: boolean;
+  isCustom?: boolean;
 }
 
 export type GitAccountProvider = 'github' | 'gitlab' | 'bitbucket' | 'custom';

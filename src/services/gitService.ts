@@ -12,6 +12,7 @@ import {
   GitRef,
   GitSubmodule,
   GitWorktree,
+  IdeConfig,
   RemoteHostInfo,
   RemoteIssue,
   RemotePullRequest,
@@ -131,15 +132,88 @@ export async function writeConflictFileContent(
 export async function openInExternalEditor(
   repoPath: string,
   filePath?: string,
-  editor: 'vscode' | 'cursor' = 'vscode'
+  editor: string = 'vscode',
+  customExecutable?: string,
+  launchMode?: 'gui' | 'terminal-cli'
 ): Promise<void> {
   if (isTauriRuntime()) {
     await invoke('open_in_external_editor', {
       repoPath,
       filePath: filePath ?? null,
       editor,
+      customExecutable: customExecutable ?? null,
+      launchMode: launchMode ?? null,
     });
   }
+}
+
+export async function detectInstalledIdes(): Promise<IdeConfig[]> {
+  if (isTauriRuntime()) {
+    return await invoke<IdeConfig[]>('detect_installed_ides');
+  }
+  return [
+    {
+      id: 'vscode',
+      name: 'Visual Studio Code',
+      category: 'ide',
+      launchMode: 'gui',
+      command: 'code',
+      executablePath: 'code',
+      installed: true,
+    },
+    {
+      id: 'cursor-ide',
+      name: 'Cursor (Classic Code IDE)',
+      category: 'ide',
+      launchMode: 'gui',
+      command: 'cursor --classic',
+      executablePath: 'cursor',
+      installed: false,
+    },
+    {
+      id: 'antigravity',
+      name: 'Antigravity (AI Harness)',
+      category: 'ai-harness',
+      launchMode: 'gui',
+      command: 'agy',
+      executablePath: 'agy',
+      installed: true,
+    },
+    {
+      id: 'cursor',
+      name: 'Cursor Agents Window',
+      category: 'ai-harness',
+      launchMode: 'gui',
+      command: 'cursor --glass',
+      executablePath: 'cursor',
+      installed: false,
+    },
+    {
+      id: 'cursor-agent-cli',
+      name: 'Cursor Agent CLI',
+      category: 'ai-harness',
+      launchMode: 'terminal-cli',
+      command: 'cursor agent',
+      executablePath: 'cursor agent',
+      installed: false,
+    },
+    {
+      id: 'claude-code',
+      name: 'Claude Code CLI',
+      category: 'ai-harness',
+      launchMode: 'terminal-cli',
+      command: 'claude',
+      executablePath: 'claude',
+      installed: false,
+    },
+  ];
+}
+
+export async function pickIdeExecutable(): Promise<string | null> {
+  if (isTauriRuntime()) {
+    return await invoke<string | null>('pick_executable');
+  }
+  return null;
 }
 
 export async function startWatchingRepository(

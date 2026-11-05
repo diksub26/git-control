@@ -10,6 +10,7 @@ import {
   GitSubmodule,
   GitWorktree,
   GraphStyle,
+  IdeConfig,
   RemoteHostInfo,
   RemoteIssue,
   RemotePullRequest,
@@ -19,6 +20,7 @@ import {
 import {
   clearLocalGitConfigIdentity,
   createRemoteRepositoryViaApi,
+  detectInstalledIdes,
   execGit,
   fetchRemotePullRequestsAndIssues,
   getCommitChangedFiles,
@@ -27,6 +29,7 @@ import {
   getGitConfigIdentity,
   loadRepositoryState,
   onGitCommandLog,
+  openInExternalEditor,
   setGitConfigIdentity,
 } from '../services/gitService';
 
@@ -54,11 +57,18 @@ interface GitStoreState {
   activeTabId: string;
   isRepoModalOpen: boolean;
 
-  // Git Account Management
+  // Git Account Management & IDE Integration
   accounts: GitAccount[];
   gitIdentity: GitConfigIdentity;
   isAccountModalOpen: boolean;
   isPublishModalOpen: boolean;
+  isIdeModalOpen: boolean;
+  ideModalInitialFilter: 'all' | 'ide' | 'ai-harness';
+  detectedIdes: IdeConfig[];
+  customIdes: IdeConfig[];
+  customIdePaths: Record<string, string>;
+  defaultIdeId: string;
+  defaultAiHarnessId: string;
 
   // Current repo data
   isGitInitialized: boolean;
@@ -107,6 +117,30 @@ interface GitStoreState {
   setRepoModalOpen: (open: boolean) => void;
   setAccountModalOpen: (open: boolean) => void;
   setPublishModalOpen: (open: boolean) => void;
+  setIdeModalOpen: (
+    open: boolean,
+    initialFilter?: 'all' | 'ide' | 'ai-harness'
+  ) => void;
+  refreshDetectedIdes: () => Promise<void>;
+  setRepoPreferredIde: (ideId: string, scope: 'repo' | 'global') => void;
+  setRepoPreferredAiHarness: (
+    harnessId: string,
+    scope: 'repo' | 'global'
+  ) => void;
+  updateIdeExecutablePath: (ideId: string, executablePath: string) => void;
+  saveCustomIde: (
+    ide: {
+      id?: string;
+      name: string;
+      executablePath: string;
+      category?: 'ide' | 'ai-harness';
+      launchMode?: 'gui' | 'terminal-cli';
+    },
+    setForCurrentRepo?: boolean
+  ) => void;
+  removeCustomIde: (ideId: string) => void;
+  openActiveRepoInIde: (filePath?: string, overrideIdeId?: string) => Promise<void>;
+  openActiveRepoInAiHarness: (overrideHarnessId?: string) => Promise<void>;
   initLocalRepository: () => Promise<boolean>;
   publishLocalRepository: (params: {
     mode: 'create-api' | 'custom-url';
@@ -175,6 +209,32 @@ const SESSION_TABS_KEY = 'git-control-session-tabs';
 const SESSION_ACTIVE_TAB_KEY = 'git-control-session-active-tab';
 const SAVED_REPOS_KEY = 'git-control-saved-repos-v2';
 const SAVED_ACCOUNTS_KEY = 'git-control-accounts-v1';
+const DEFAULT_IDE_KEY = 'git-control-default-ide-v1';
+const DEFAULT_AI_HARNESS_KEY = 'git-control-default-ai-harness-v1';
+const CUSTOM_IDES_KEY = 'git-control-custom-ides-v1';
+const CUSTOM_IDE_PATHS_KEY = 'git-control-ide-paths-v1';
+
+function loadInitialCustomIdes(): IdeConfig[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_IDES_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadInitialIdePaths(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(CUSTOM_IDE_PATHS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 function loadInitialAccounts(): GitAccount[] {
   try {
@@ -239,6 +299,14 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
     isAccountModalOpen: false,
     isPublishModalOpen: false,
+    isIdeModalOpen: false,
+    ideModalInitialFilter: 'all',
+    detectedIdes: [],
+    customIdes: loadInitialCustomIdes(),
+    customIdePaths: loadInitialIdePaths(),
+    defaultIdeId: localStorage.getItem(DEFAULT_IDE_KEY) || 'vscode',
+    defaultAiHarnessId:
+      localStorage.getItem(DEFAULT_AI_HARNESS_KEY) || 'antigravity',
 
     isGitInitialized: true,
     isLoading: false,
@@ -287,6 +355,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
 
     initStore: async () => {
+      get().refreshDetectedIdes();
       await get().refreshGitIdentity();
       const { tabs } = get();
       if (tabs.length === 0) {
@@ -297,6 +366,256 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
 
     setRepoModalOpen: (isRepoModalOpen: boolean) => set({ isRepoModalOpen }),
+
+    setIdeModalOpen: (isIdeModalOpen: boolean, initialFilter = 'all') => {
+      set({ isIdeModalOpen, ideModalInitialFilter: initialFilter });
+      if (isIdeModalOpen) {
+        get().refreshDetectedIdes();
+      }
+    },
+
+    refreshDetectedIdes: async () => {
+      try {
+        const list = await detectInstalledIdes();
+        set({ detectedIdes: list });
+      } catch {
+        // Ignore detection errors
+      }
+    },
+
+    setRepoPreferredIde: (ideId: string, scope: 'repo' | 'global') => {
+      const { tabs, activeTabId, detectedIdes, customIdes } = get();
+      const allIdes = [...detectedIdes, ...customIdes];
+      const ideLabel = allIdes.find((i) => i.id === ideId)?.name || ideId;
+
+      if (scope === 'global') {
+        localStorage.setItem(DEFAULT_IDE_KEY, ideId);
+        set({ defaultIdeId: ideId });
+        get().showToast(`Set '${ideLabel}' as Global Default IDE`, 'success');
+        return;
+      }
+
+      const updatedTabs = tabs.map((t) =>
+        t.id === activeTabId
+          ? { ...t, preferredIdeId: ideId || undefined }
+          : t
+      );
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+      set({ tabs: updatedTabs });
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      get().showToast(
+        ideId
+          ? `Set '${ideLabel}' as integrated IDE for '${activeTab?.name || 'repository'}'`
+          : `Reset '${activeTab?.name || 'repository'}' to use Global Default IDE`,
+        'success'
+      );
+    },
+
+    setRepoPreferredAiHarness: (
+      harnessId: string,
+      scope: 'repo' | 'global'
+    ) => {
+      const { tabs, activeTabId, detectedIdes, customIdes } = get();
+      const allIdes = [...detectedIdes, ...customIdes];
+      const harnessLabel =
+        allIdes.find((i) => i.id === harnessId)?.name || harnessId;
+
+      if (scope === 'global') {
+        localStorage.setItem(DEFAULT_AI_HARNESS_KEY, harnessId);
+        set({ defaultAiHarnessId: harnessId });
+        get().showToast(
+          `Set '${harnessLabel}' as Global Default AI Harness`,
+          'success'
+        );
+        return;
+      }
+
+      const updatedTabs = tabs.map((t) =>
+        t.id === activeTabId
+          ? { ...t, preferredAiHarnessId: harnessId || undefined }
+          : t
+      );
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+      set({ tabs: updatedTabs });
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      get().showToast(
+        harnessId
+          ? `Set '${harnessLabel}' as integrated AI Harness for '${activeTab?.name || 'repository'}'`
+          : `Reset '${activeTab?.name || 'repository'}' to use Global Default AI Harness`,
+        'success'
+      );
+    },
+
+    updateIdeExecutablePath: (ideId: string, executablePath: string) => {
+      const nextPaths = {
+        ...get().customIdePaths,
+        [ideId]: executablePath.trim(),
+      };
+      if (!executablePath.trim()) {
+        delete nextPaths[ideId];
+      }
+      localStorage.setItem(CUSTOM_IDE_PATHS_KEY, JSON.stringify(nextPaths));
+      set({ customIdePaths: nextPaths });
+      get().showToast('Updated executable path', 'success');
+    },
+
+    saveCustomIde: (ideInput, setForCurrentRepo = true) => {
+      const { customIdes, tabs, activeTabId } = get();
+      const id =
+        ideInput.id ||
+        `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const category = ideInput.category || 'ide';
+      const launchMode = ideInput.launchMode || 'gui';
+      const entry: IdeConfig = {
+        id,
+        name: ideInput.name.trim(),
+        category,
+        launchMode,
+        command: ideInput.executablePath.trim(),
+        executablePath: ideInput.executablePath.trim(),
+        installed: true,
+        isCustom: true,
+      };
+      const existsIdx = customIdes.findIndex((c) => c.id === id);
+      const nextCustom =
+        existsIdx >= 0
+          ? customIdes.map((c, idx) => (idx === existsIdx ? entry : c))
+          : [...customIdes, entry];
+      localStorage.setItem(CUSTOM_IDES_KEY, JSON.stringify(nextCustom));
+
+      if (setForCurrentRepo && activeTabId) {
+        const updatedTabs = tabs.map((t) =>
+          t.id === activeTabId
+            ? category === 'ai-harness'
+              ? { ...t, preferredAiHarnessId: id }
+              : { ...t, preferredIdeId: id }
+            : t
+        );
+        localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+        set({ customIdes: nextCustom, tabs: updatedTabs });
+      } else {
+        set({ customIdes: nextCustom });
+      }
+      get().showToast(`Saved custom ${category === 'ai-harness' ? 'AI Harness' : 'IDE'} '${entry.name}'`, 'success');
+    },
+
+    removeCustomIde: (ideId: string) => {
+      const { customIdes, tabs, defaultIdeId, defaultAiHarnessId } = get();
+      const nextCustom = customIdes.filter((c) => c.id !== ideId);
+      localStorage.setItem(CUSTOM_IDES_KEY, JSON.stringify(nextCustom));
+
+      const updatedTabs = tabs.map((t) => ({
+        ...t,
+        preferredIdeId:
+          t.preferredIdeId === ideId ? undefined : t.preferredIdeId,
+        preferredAiHarnessId:
+          t.preferredAiHarnessId === ideId ? undefined : t.preferredAiHarnessId,
+      }));
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+
+      const nextDefault = defaultIdeId === ideId ? 'vscode' : defaultIdeId;
+      const nextDefaultAi =
+        defaultAiHarnessId === ideId ? 'antigravity' : defaultAiHarnessId;
+      localStorage.setItem(DEFAULT_IDE_KEY, nextDefault);
+      localStorage.setItem(DEFAULT_AI_HARNESS_KEY, nextDefaultAi);
+
+      set({
+        customIdes: nextCustom,
+        tabs: updatedTabs,
+        defaultIdeId: nextDefault,
+        defaultAiHarnessId: nextDefaultAi,
+      });
+      get().showToast('Removed custom integration', 'info');
+    },
+
+    openActiveRepoInIde: async (filePath?: string, overrideIdeId?: string) => {
+      const {
+        tabs,
+        activeTabId,
+        defaultIdeId,
+        detectedIdes,
+        customIdes,
+        customIdePaths,
+      } = get();
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      if (!activeTab) return;
+
+      const targetIdeId =
+        overrideIdeId || activeTab.preferredIdeId || defaultIdeId || 'vscode';
+      const allIdes = [...detectedIdes, ...customIdes];
+      const ideObj = allIdes.find((i) => i.id === targetIdeId);
+      const customExec =
+        customIdePaths[targetIdeId] ||
+        (ideObj?.isCustom ? ideObj.executablePath : ideObj?.executablePath || undefined);
+
+      try {
+        await openInExternalEditor(
+          activeTab.path,
+          filePath,
+          targetIdeId,
+          customExec,
+          ideObj?.launchMode
+        );
+        get().showToast(
+          `Opened ${filePath || activeTab.name} in ${ideObj?.name || targetIdeId}`,
+          'info'
+        );
+      } catch (err: any) {
+        get().showToast(
+          `Failed to open ${ideObj?.name || targetIdeId}: ${
+            err?.message || err
+          }. Click the dropdown arrow to configure its path.`,
+          'error'
+        );
+      }
+    },
+
+    openActiveRepoInAiHarness: async (overrideHarnessId?: string) => {
+      const {
+        tabs,
+        activeTabId,
+        defaultAiHarnessId,
+        detectedIdes,
+        customIdes,
+        customIdePaths,
+      } = get();
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      if (!activeTab) return;
+
+      const targetId =
+        overrideHarnessId ||
+        activeTab.preferredAiHarnessId ||
+        defaultAiHarnessId ||
+        'antigravity';
+      const allIdes = [...detectedIdes, ...customIdes];
+      const harnessObj = allIdes.find((i) => i.id === targetId);
+      const customExec =
+        customIdePaths[targetId] ||
+        (harnessObj?.isCustom
+          ? harnessObj.executablePath
+          : harnessObj?.executablePath || undefined);
+
+      try {
+        await openInExternalEditor(
+          activeTab.path,
+          undefined,
+          targetId,
+          customExec,
+          harnessObj?.launchMode
+        );
+        get().showToast(
+          `Launched ${harnessObj?.name || targetId} for '${activeTab.name}'`,
+          'info'
+        );
+      } catch (err: any) {
+        get().showToast(
+          `Failed to launch AI Harness (${harnessObj?.name || targetId}): ${
+            err?.message || err
+          }. Click the AI Harness dropdown arrow to configure its command/path.`,
+          'error'
+        );
+      }
+    },
 
     setAccountModalOpen: (isAccountModalOpen: boolean) => {
       set({ isAccountModalOpen });

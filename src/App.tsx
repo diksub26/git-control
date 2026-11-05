@@ -9,6 +9,7 @@ import { DiffAndConflictModal } from './components/DiffAndConflictModal';
 import { CommandLogDrawer } from './components/CommandLogDrawer';
 import { GitAccountModal } from './components/GitAccountModal';
 import { PublishRepoModal } from './components/PublishRepoModal';
+import { IdeIntegrationModal } from './components/IdeIntegrationModal';
 import { useGitStore } from './store/useGitStore';
 import { startWatchingRepository } from './services/gitService';
 
@@ -98,6 +99,9 @@ export const App: React.FC = () => {
 
       {/* Publish Local Repository to Remote Modal */}
       <PublishRepoModal />
+
+      {/* Manage IDE & Editor Integration Modal */}
+      <IdeIntegrationModal />
 
       {/* Floating Active Git/Remote Operation Loading Pill */}
       {runningOpLabel && (

@@ -20,9 +20,11 @@ import {
   GitFork,
   Users,
   UploadCloud,
+  ChevronDown,
+  Bot,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
-import { openInExternalEditor, pickRepositoryFolder } from '../services/gitService';
+import { pickRepositoryFolder } from '../services/gitService';
 import { getAuthorAvatarUrl } from '../utils/avatar';
 
 export const TopTabBar: React.FC = () => {
@@ -33,6 +35,10 @@ export const TopTabBar: React.FC = () => {
     isRepoModalOpen,
     accounts,
     gitIdentity,
+    detectedIdes,
+    customIdes,
+    defaultIdeId,
+    defaultAiHarnessId,
     isLoading,
     activeRemoteOp,
     runningOpLabel,
@@ -42,6 +48,9 @@ export const TopTabBar: React.FC = () => {
     setRepoModalOpen,
     setAccountModalOpen,
     setPublishModalOpen,
+    setIdeModalOpen,
+    openActiveRepoInIde,
+    openActiveRepoInAiHarness,
     setActiveTab,
     closeRepoTab,
     openRepoTab,
@@ -324,15 +333,89 @@ export const TopTabBar: React.FC = () => {
             )
           )}
 
-          {activeTab && (
-            <button
-              onClick={() => openInExternalEditor(activeTab.path, undefined, 'vscode')}
-              className="p-1.5 rounded-lg text-slate-300 bg-white/[0.04] hover:bg-white/10 border border-white/10 transition"
-              title="Open Repository in VS Code"
-            >
-              <Code2 className="w-3.5 h-3.5 text-blue-400" />
-            </button>
-          )}
+          {activeTab && (() => {
+            const targetIdeId =
+              activeTab.preferredIdeId || defaultIdeId || 'vscode';
+            const targetAiId =
+              activeTab.preferredAiHarnessId ||
+              defaultAiHarnessId ||
+              'antigravity';
+            const allIdes = [...detectedIdes, ...customIdes];
+            const activeIde = allIdes.find((i) => i.id === targetIdeId);
+            const activeAi = allIdes.find((i) => i.id === targetAiId);
+
+            const shortIdeName =
+              targetIdeId === 'vscode'
+                ? 'VS Code'
+                : targetIdeId === 'intellij'
+                ? 'IntelliJ'
+                : targetIdeId === 'webstorm'
+                ? 'WebStorm'
+                : targetIdeId === 'explorer'
+                ? 'Explorer'
+                : activeIde?.name?.replace(/\s*\(.*\)$/, '') || targetIdeId;
+
+            const shortAiName =
+              targetAiId === 'antigravity'
+                ? 'Antigravity'
+                : targetAiId === 'claude-code'
+                ? 'Claude Code'
+                : targetAiId === 'codex'
+                ? 'Codex CLI'
+                : targetAiId === 'gemini-cli'
+                ? 'Gemini CLI'
+                : targetAiId === 'opencode'
+                ? 'OpenCode'
+                : targetAiId === 'aider'
+                ? 'Aider'
+                : targetAiId === 'cursor'
+                ? 'Cursor'
+                : targetAiId === 'windsurf'
+                ? 'Windsurf'
+                : activeAi?.name?.replace(/\s*\(.*\)$/, '') || targetAiId;
+
+            return (
+              <div className="flex items-center gap-1.5">
+                {/* Split Button 1: Open in Code IDE */}
+                <div className="flex items-center rounded-lg bg-white/[0.04] border border-white/10 overflow-hidden">
+                  <button
+                    onClick={() => openActiveRepoInIde()}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition"
+                    title={`Open '${activeTab.name}' in ${activeIde?.name || shortIdeName}`}
+                  >
+                    <Code2 className="w-3.5 h-3.5 text-blue-400" />
+                    <span className="max-w-[85px] truncate">{shortIdeName}</span>
+                  </button>
+                  <button
+                    onClick={() => setIdeModalOpen(true, 'ide')}
+                    className="px-1.5 py-1.5 text-slate-400 hover:text-white hover:bg-white/10 border-l border-white/10 transition"
+                    title="Select Code IDE for this Repository"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {/* Split Button 2: Open in AI Harness */}
+                <div className="flex items-center rounded-lg bg-purple-500/10 border border-purple-400/25 overflow-hidden">
+                  <button
+                    onClick={() => openActiveRepoInAiHarness()}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-purple-200 hover:bg-purple-500/20 transition"
+                    title={`Open '${activeTab.name}' in AI Harness: ${activeAi?.name || shortAiName}`}
+                  >
+                    <Bot className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="max-w-[90px] truncate">{shortAiName}</span>
+                  </button>
+                  <button
+                    onClick={() => setIdeModalOpen(true, 'ai-harness')}
+                    className="px-1.5 py-1.5 text-purple-300 hover:text-white hover:bg-purple-500/20 border-l border-purple-400/25 transition"
+                    title="Select AI Harness (Claude Code, Codex, Antigravity, Cursor, Aider) for this Repository"
+                  >
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           <button
             onClick={() => refreshActiveRepo()}
