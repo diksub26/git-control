@@ -132,6 +132,69 @@ export const GitGraphView: React.FC = () => {
   // Compute full graph layout from commits
   const graph = useMemo(() => computeGitGraph(commits), [commits]);
 
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(800);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.height > 0) {
+          setViewportHeight(entry.contentRect.height);
+        }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const totalNodes = graph.nodes.length;
+  const totalHeight = totalNodes * ROW_HEIGHT;
+  const OVERSCAN = 15;
+
+  const startIndex = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+  const endIndex = Math.min(
+    totalNodes - 1,
+    Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + OVERSCAN
+  );
+
+  const visibleNodes = useMemo(() => {
+    if (totalNodes === 0) return [];
+    return graph.nodes.slice(startIndex, endIndex + 1);
+  }, [graph.nodes, startIndex, endIndex, totalNodes]);
+
+  const visibleLinks = useMemo(() => {
+    if (graph.links.length === 0) return [];
+    return graph.links.filter(
+      (link) =>
+        Math.min(link.fromRow, link.toRow) <= endIndex &&
+        Math.max(link.fromRow, link.toRow) >= startIndex
+    );
+  }, [graph.links, startIndex, endIndex]);
+
+  // Smoothly scroll to selected commit if outside viewport
+  const prevSelectedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selectedCommitHash || selectedCommitHash === prevSelectedRef.current) return;
+    prevSelectedRef.current = selectedCommitHash;
+    const targetIdx = graph.nodes.findIndex((n) => n.commit.hash === selectedCommitHash);
+    if (targetIdx !== -1 && scrollContainerRef.current) {
+      const targetTop = targetIdx * ROW_HEIGHT;
+      const currentScroll = scrollContainerRef.current.scrollTop;
+      if (
+        targetTop < currentScroll ||
+        targetTop > currentScroll + viewportHeight - ROW_HEIGHT * 2
+      ) {
+        scrollContainerRef.current.scrollTo({
+          top: Math.max(0, targetTop - viewportHeight / 3),
+          behavior: 'smooth',
+        });
+      }
+    }
+  }, [selectedCommitHash, graph.nodes, viewportHeight]);
+
   const graphColumnPixelWidth = Math.max(
     graph.maxColumns * COL_WIDTH + PAD_LEFT * 2,
     96
@@ -313,21 +376,25 @@ export const GitGraphView: React.FC = () => {
 
       {/* Scrollable Graph Canvas + Commit Rows */}
       <div
-        onScroll={() => contextMenu && setContextMenu(null)}
+        ref={scrollContainerRef}
+        onScroll={(e) => {
+          if (contextMenu) setContextMenu(null);
+          setScrollTop(e.currentTarget.scrollTop);
+        }}
         className="flex-1 overflow-auto relative"
       >
         <div
           className="relative min-w-[680px]"
-          style={{ height: graph.nodes.length * ROW_HEIGHT }}
+          style={{ height: totalHeight }}
         >
           {/* SVG Layer for Graph Paths & Commit Vertices */}
           <svg
             width={graphColumnPixelWidth}
-            height={graph.nodes.length * ROW_HEIGHT}
+            height={totalHeight}
             className="absolute top-0 left-0 pointer-events-none z-10"
           >
-            {/* 1. Render all connecting branch/merge paths */}
-            {graph.links.map((link, idx) => {
+            {/* 1. Render connecting branch/merge paths within visible range */}
+            {visibleLinks.map((link, idx) => {
               const strokeColor = link.isUncommitted
                 ? '#94a3b8'
                 : GRAPH_COLORS[link.colorIndex % GRAPH_COLORS.length];
@@ -340,7 +407,7 @@ export const GitGraphView: React.FC = () => {
               );
               return (
                 <path
-                  key={`link-${idx}`}
+                  key={`link-${link.fromRow}-${link.fromCol}-${link.toRow}-${link.toCol}-${idx}`}
                   d={d}
                   fill="none"
                   stroke={strokeColor}
@@ -352,8 +419,8 @@ export const GitGraphView: React.FC = () => {
               );
             })}
 
-            {/* 2. Render each Commit Vertex Node */}
-            {graph.nodes.map((node) => {
+            {/* 2. Render Commit Vertex Nodes within visible range */}
+            {visibleNodes.map((node) => {
               const cx = PAD_LEFT + node.col * COL_WIDTH;
               const cy = node.row * ROW_HEIGHT + ROW_HEIGHT / 2;
               const color = node.commit.isUncommitted
@@ -446,9 +513,9 @@ export const GitGraphView: React.FC = () => {
             })}
           </svg>
 
-          {/* Commit Table Rows */}
-          {graph.nodes.map((node) => {
-            const { commit, colorIndex } = node;
+          {/* Virtualized Commit Table Rows */}
+          {visibleNodes.map((node) => {
+            const { commit, colorIndex, row } = node;
             const laneColor =
               GRAPH_COLORS[colorIndex % GRAPH_COLORS.length];
             const isPrimarySelected = selectedCommitHash === commit.hash;
@@ -460,7 +527,13 @@ export const GitGraphView: React.FC = () => {
             return (
               <div
                 key={commit.hash}
-                style={{ height: ROW_HEIGHT }}
+                style={{
+                  height: ROW_HEIGHT,
+                  position: 'absolute',
+                  top: row * ROW_HEIGHT,
+                  left: 0,
+                  right: 0,
+                }}
                 onClick={(e) =>
                   selectCommit(commit.hash, e.ctrlKey || e.metaKey)
                 }
