@@ -77,11 +77,6 @@ export const GitGraphView: React.FC = () => {
     mode: 'branch' | 'tag' | 'rename-branch';
   } | null>(null);
   const [promptValue, setPromptValue] = useState('');
-  const [branchDropdownRect, setBranchDropdownRect] = useState<{
-    left: number;
-    top: number;
-  } | null>(null);
-  const [branchDropdownQuery, setBranchDropdownQuery] = useState('');
   const [orderDropdownRect, setOrderDropdownRect] = useState<{
     left: number;
     top: number;
@@ -109,16 +104,13 @@ export const GitGraphView: React.FC = () => {
 
   useEffect(() => {
     setContextMenu(null);
-    setBranchDropdownRect(null);
-    setBranchDropdownQuery('');
     setOrderDropdownRect(null);
   }, [activeTabId]);
 
   useEffect(() => {
-    if (!contextMenu && !branchDropdownRect && !orderDropdownRect) return;
+    if (!contextMenu && !orderDropdownRect) return;
     const closeAll = () => {
       setContextMenu(null);
-      setBranchDropdownRect(null);
       setOrderDropdownRect(null);
     };
     const onKeyDown = (e: KeyboardEvent) => {
@@ -132,7 +124,7 @@ export const GitGraphView: React.FC = () => {
       window.removeEventListener('resize', closeAll);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [contextMenu, branchDropdownRect, orderDropdownRect]);
+  }, [contextMenu, orderDropdownRect]);
 
   // Compute full graph layout from commits
   const graph = useMemo(() => computeGitGraph(commits), [commits]);
@@ -220,54 +212,21 @@ export const GitGraphView: React.FC = () => {
     <section
       onClick={() => {
         setContextMenu(null);
-        setBranchDropdownRect(null);
         setOrderDropdownRect(null);
       }}
       className="flex-1 h-full flex flex-col min-w-0 bg-slate-950/25 backdrop-blur-md select-none"
     >
       {/* vscode-git-graph Control & Filter Bar */}
-      <div className="h-11 px-3 flex items-center justify-between gap-2 bg-slate-950/50 border-b border-white/10 shrink-0">
+      <div className="h-9 px-3 flex items-center justify-between gap-2 bg-slate-950/50 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          {/* Custom Glassmorphic Branch & Remote Filter Dropdown */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOrderDropdownRect(null);
-              if (branchDropdownRect) {
-                setBranchDropdownRect(null);
-              } else {
-                const r = e.currentTarget.getBoundingClientRect();
-                setBranchDropdownRect({ left: r.left, top: r.bottom + 6 });
-                setBranchDropdownQuery('');
-              }
-            }}
-            className="flex items-center gap-2 bg-white/[0.06] hover:bg-white/10 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 transition shrink-0"
-          >
-            <GitBranch className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            <span className="truncate max-w-[190px] font-medium">
-              {selectedBranches.length === 0
-                ? 'All Branches & Remotes'
-                : selectedBranches.length === 1
-                ? selectedBranches[0]
-                : `${selectedBranches.length} Branches Selected`}
-            </span>
-            {selectedBranches.length > 1 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-sky-500/25 text-sky-300 text-[10px] font-mono">
-                {selectedBranches.length}
-              </span>
-            )}
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-          </button>
-
           {/* Search Input */}
-          <div className="relative flex-1 max-w-xs">
+          <div className="relative flex-1 max-w-sm">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Find commit, hash, author, branch..."
+              placeholder="Find commit, hash, author, message..."
               className="w-full pl-8 pr-6 py-1 rounded-lg bg-white/[0.05] border border-white/10 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-400"
             />
             {matchingHashes && (
@@ -285,7 +244,6 @@ export const GitGraphView: React.FC = () => {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              setBranchDropdownRect(null);
               if (orderDropdownRect) {
                 setOrderDropdownRect(null);
               } else {
@@ -1017,155 +975,6 @@ export const GitGraphView: React.FC = () => {
               <span>Inspect & Stage Working Changes</span>
             </button>
           )}
-          </div>,
-          document.body
-        )}
-
-      {/* Custom Branch & Remote Filter Dropdown Portal */}
-      {branchDropdownRect &&
-        createPortal(
-          <div
-            style={{ top: branchDropdownRect.top, left: branchDropdownRect.left }}
-            onClick={(e) => e.stopPropagation()}
-            className="fixed z-[9999] w-72 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-2 text-xs text-slate-200 select-none"
-          >
-            <div className="relative mb-2">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                autoFocus
-                value={branchDropdownQuery}
-                onChange={(e) => setBranchDropdownQuery(e.target.value)}
-                placeholder="Filter branches & remotes..."
-                className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-slate-950 border border-white/15 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-sky-400"
-              />
-            </div>
-
-            <div className="max-h-72 overflow-y-auto space-y-1">
-              <button
-                type="button"
-                onClick={() => {
-                  clearBranchSelection();
-                }}
-                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
-                  selectedBranches.length === 0
-                    ? 'bg-sky-500/20 text-sky-200 font-medium'
-                    : 'hover:bg-white/[0.07] text-slate-200'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className={`w-3.5 h-3.5 rounded flex items-center justify-center border ${
-                      selectedBranches.length === 0
-                        ? 'bg-sky-500 border-sky-400 text-white'
-                        : 'border-white/25 bg-slate-950'
-                    }`}
-                  >
-                    {selectedBranches.length === 0 && (
-                      <Check className="w-2.5 h-2.5 stroke-[3]" />
-                    )}
-                  </span>
-                  <GitBranch className="w-3.5 h-3.5 text-sky-400" />
-                  <span>All Branches & Remotes</span>
-                </span>
-                {selectedBranches.length > 0 && (
-                  <span className="text-[10px] text-sky-400 hover:underline">
-                    Reset
-                  </span>
-                )}
-              </button>
-
-              <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Local Branches ({localBranches.length})
-              </div>
-              {localBranches
-                .filter((b) =>
-                  b.name.toLowerCase().includes(branchDropdownQuery.toLowerCase())
-                )
-                .map((b) => {
-                  const isChecked = selectedBranches.includes(b.name);
-                  return (
-                    <button
-                      key={b.fullName}
-                      type="button"
-                      onClick={() => toggleBranchSelection(b.name)}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
-                        isChecked
-                          ? 'bg-sky-500/20 text-sky-200 font-medium'
-                          : 'hover:bg-white/[0.07] text-slate-300'
-                      }`}
-                    >
-                      <span className="flex items-center gap-2 truncate">
-                        <span
-                          className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
-                            isChecked
-                              ? 'bg-sky-500 border-sky-400 text-white'
-                              : 'border-white/25 bg-slate-950'
-                          }`}
-                        >
-                          {isChecked && (
-                            <Check className="w-2.5 h-2.5 stroke-[3]" />
-                          )}
-                        </span>
-                        <GitBranch className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                        <span className="truncate">{b.name}</span>
-                        {b.isCurrentHead && (
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[10px]">
-                            HEAD
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-
-              {remoteBranches.length > 0 && (
-                <>
-                  <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                    Remote Branches ({remoteBranches.length})
-                  </div>
-                  {remoteBranches
-                    .filter((rb) =>
-                      rb.name
-                        .toLowerCase()
-                        .includes(branchDropdownQuery.toLowerCase())
-                    )
-                    .map((rb) => {
-                      const isChecked = selectedBranches.includes(rb.name);
-                      return (
-                        <button
-                          key={rb.fullName}
-                          type="button"
-                          onClick={() => toggleBranchSelection(rb.name)}
-                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-left transition ${
-                            isChecked
-                              ? 'bg-sky-500/20 text-sky-200 font-medium'
-                              : 'hover:bg-white/[0.07] text-slate-300'
-                          }`}
-                        >
-                          <span className="flex items-center gap-2 truncate">
-                            <span
-                              className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${
-                                isChecked
-                                  ? 'bg-sky-500 border-sky-400 text-white'
-                                  : 'border-white/25 bg-slate-950'
-                              }`}
-                            >
-                              {isChecked && (
-                                <Check className="w-2.5 h-2.5 stroke-[3]" />
-                              )}
-                            </span>
-                            <Globe className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                            <span className="truncate font-mono text-[11px]">
-                              {rb.name}
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                </>
-              )}
-            </div>
           </div>,
           document.body
         )}

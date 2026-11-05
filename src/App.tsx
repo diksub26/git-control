@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderGit2, Loader2, AlertTriangle, X } from 'lucide-react';
 import { TopTabBar } from './components/TopTabBar';
+import { RepoToolbar } from './components/RepoToolbar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { GitGraphView } from './components/GitGraphView';
 import { RightContextPanel } from './components/RightContextPanel';
@@ -66,9 +67,20 @@ export const App: React.FC = () => {
       {/* Main 3-Panel IDE Workspace */}
       {tabs.length > 0 ? (
         <main className="flex-1 flex min-h-0 overflow-hidden">
+          {/* Left Sidebar (Full Height / Naik) */}
           <LeftSidebar />
-          <GitGraphView />
-          <RightContextPanel />
+
+          {/* Right Main Container */}
+          <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+            {/* Top Workspace Header: nama repo Dropdown Branch --- SPACE BETWEEN --- Toolbar Button */}
+            <RepoToolbar />
+
+            {/* Content: Git Graph & Right Context Panel */}
+            <div className="flex-1 flex min-h-0 overflow-hidden">
+              <GitGraphView />
+              <RightContextPanel />
+            </div>
+          </div>
         </main>
       ) : (
         <main className="flex-1 flex flex-col items-center justify-center p-8 text-center select-none">

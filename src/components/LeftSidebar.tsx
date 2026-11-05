@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   GitBranch,
@@ -21,12 +21,10 @@ import {
   FileDiff,
   Loader2,
   UploadCloud,
-  Workflow,
-  Settings2,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import { openExternalUrl } from '../services/gitService';
-import { GitWorkflow, RemoteIssue, RemotePullRequest } from '../types/git';
+import { RemoteIssue, RemotePullRequest } from '../types/git';
 
 export const LeftSidebar: React.FC = () => {
   const {
@@ -37,8 +35,6 @@ export const LeftSidebar: React.FC = () => {
     remoteInfo,
     pullRequests,
     issues,
-    workflows,
-    activeWorkflowRun,
     tabs,
     activeTabId,
     currentBranch,
@@ -46,66 +42,73 @@ export const LeftSidebar: React.FC = () => {
     selectedCommitHash,
     selectCommit,
     runGitOp,
-    runWorkflow,
     loadRemotePRsAndIssues,
     setPublishModalOpen,
     setCreatePRModalOpen,
-    setWorkflowModalOpen,
     requestConfirm,
   } = useGitStore();
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
-  const availableWorkflows = workflows.filter(
-    (wf) =>
-      wf.scope === 'global' ||
-      (activeTab && wf.repoPath?.toLowerCase() === activeTab.path.toLowerCase())
-  );
 
-  const isWorkflowDestructive = (wf: GitWorkflow) => {
-    if (wf.confirmBeforeRun) return true;
-    return wf.steps.some((s) =>
-      /\b(push\s+(-f|--force)|reset\s+--hard|clean\s+-[fd]|branch\s+-D|checkout\s+--)\b/i.test(
-        s.command
-      )
-    );
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('git_control_sidebar_width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 180 && parsed <= 600) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return 260;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const isResizingRef = useRef(false);
+
+  const startResizing = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingRef.current = true;
+    setIsResizing(true);
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.min(Math.max(startWidth + deltaX, 180), 600);
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      isResizingRef.current = false;
+      setIsResizing(false);
+      const deltaX = upEvent.clientX - startX;
+      const finalWidth = Math.min(Math.max(startWidth + deltaX, 180), 600);
+      setSidebarWidth(finalWidth);
+      try {
+        localStorage.setItem('git_control_sidebar_width', finalWidth.toString());
+      } catch {}
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
   };
 
-  const handleQuickRunWorkflow = (wf: GitWorkflow) => {
-    const previewSteps = wf.steps
-      .map(
-        (s, idx) =>
-          `${idx + 1}. ${
-            s.command.trim().startsWith('git ')
-              ? s.command.trim()
-              : `git ${s.command.trim()}`
-          }`.replace(/\$\{branch\}|\{branch\}/g, currentBranch || 'HEAD')
-      )
-      .join('\n');
-
-    if (isWorkflowDestructive(wf)) {
-      requestConfirm({
-        title: `Run Workflow '${wf.name}'`,
-        description: `Execute ${wf.steps.length} sequential Git command(s) in '${
-          activeTab?.name || 'current repository'
-        }' on branch '${currentBranch || 'HEAD'}'?`,
-        confirmLabel: 'Run Workflow',
-        variant: wf.steps.some((s) =>
-          /\b(push\s+(-f|--force)|reset\s+--hard|clean\s+-[fd])\b/i.test(s.command)
-        )
-          ? 'danger'
-          : 'warning',
-        commandPreview: previewSteps,
-        onConfirm: async () => {
-          await runWorkflow(wf.id);
-        },
-      });
-    } else {
-      runWorkflow(wf.id);
-    }
-  };
+  useEffect(() => {
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
 
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    workflows: true,
     branches: true,
     remotes: true,
     tags: false,
@@ -133,120 +136,39 @@ export const LeftSidebar: React.FC = () => {
 
   return (
     <>
-      <aside className="w-64 shrink-0 h-full bg-slate-950/45 backdrop-blur-xl border-r border-white/10 flex flex-col select-none overflow-y-auto">
-        {/* Working Tree Quick Row */}
-        <div className="p-2.5 border-b border-white/10">
-          <div
-            onClick={() => selectCommit('UNCOMMITTED')}
-            className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition border ${
-              selectedCommitHash === 'UNCOMMITTED'
-                ? 'bg-sky-500/20 border-sky-400/40 text-white'
-                : 'bg-white/[0.03] border-white/5 text-slate-300 hover:bg-white/[0.08]'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <FileDiff className="w-4 h-4 text-amber-400" />
-              <span className="text-xs font-medium">Working Changes</span>
-            </div>
-            <div className="flex items-center gap-1">
-              {conflictCount > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-rose-500/25 text-rose-300 text-[10px] font-semibold">
-                  {conflictCount} conflict
-                </span>
-              )}
-              <span className="px-2 py-0.5 rounded-full bg-white/10 text-slate-200 text-[10px] font-mono">
-                {workingFiles.length}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Git Workflows (Sequential Macro Runner) */}
-        <div className="border-b border-white/5">
-          <div className="flex items-center justify-between px-3 py-2">
-            <button
-              onClick={() => toggle('workflows')}
-              className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400 hover:text-slate-200"
+      <div
+        style={{ width: `${sidebarWidth}px` }}
+        className="relative shrink-0 h-full flex select-none"
+      >
+        <aside className="w-full flex-1 h-full bg-slate-950/45 backdrop-blur-xl border-r border-white/10 flex flex-col select-none overflow-y-auto">
+          {/* Working Tree Quick Row */}
+          <div className="p-2.5 border-b border-white/10">
+            <div
+              onClick={() => selectCommit('UNCOMMITTED')}
+              className={`flex items-center justify-between px-3 py-2 rounded-xl cursor-pointer transition border ${
+                selectedCommitHash === 'UNCOMMITTED'
+                  ? 'bg-sky-500/20 border-sky-400/40 text-white'
+                  : 'bg-white/[0.03] border-white/5 text-slate-300 hover:bg-white/[0.08]'
+              }`}
             >
-              {openSections.workflows ? (
-                <ChevronDown className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5" />
-              )}
-              <Workflow className="w-3.5 h-3.5 text-amber-400" />
-              <span>Workflows</span>
-              <span className="text-[10px] font-mono text-slate-500">
-                {availableWorkflows.length}
-              </span>
-            </button>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setWorkflowModalOpen(true)}
-                className="p-1 text-slate-400 hover:text-amber-300"
-                title="Create or Manage Git Workflows"
-              >
-                <Settings2 className="w-3 h-3" />
-              </button>
-              <button
-                onClick={() => setWorkflowModalOpen(true)}
-                className="p-1 text-slate-400 hover:text-amber-300"
-                title="Add New Workflow"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-2">
+                <FileDiff className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-medium">Working Changes</span>
+              </div>
+              <div className="flex items-center gap-1">
+                {conflictCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-rose-500/25 text-rose-300 text-[10px] font-semibold">
+                    {conflictCount} conflict
+                  </span>
+                )}
+                <span className="px-2 py-0.5 rounded-full bg-white/10 text-slate-200 text-[10px] font-mono">
+                  {workingFiles.length}
+                </span>
+              </div>
             </div>
           </div>
 
-          {openSections.workflows && (
-            <div className="px-2 pb-2.5 space-y-1">
-              {availableWorkflows.map((wf) => {
-                const isRunningThis =
-                  activeWorkflowRun?.isRunning &&
-                  activeWorkflowRun.workflowId === wf.id;
-                return (
-                  <div
-                    key={wf.id}
-                    onClick={() => setWorkflowModalOpen(true)}
-                    className="group flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/5 cursor-pointer transition"
-                    title={`${wf.name}\nSteps:\n${wf.steps
-                      .map((s, idx) => `${idx + 1}. git ${s.command.replace(/^git\s+/i, '')}`)
-                      .join('\n')}`}
-                  >
-                    <div className="min-w-0 flex-1 pr-2">
-                      <div className="text-xs font-medium text-slate-200 truncate">
-                        {wf.name}
-                      </div>
-                      <div className="text-[10px] font-mono text-slate-400 truncate">
-                        {wf.steps
-                          .map((s) => s.command.replace(/^git\s+/i, ''))
-                          .join(' → ')}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={Boolean(activeWorkflowRun?.isRunning)}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleQuickRunWorkflow(wf);
-                      }}
-                      className="flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-[10px] font-semibold transition shrink-0 disabled:opacity-50"
-                      title={`Run '${wf.name}'`}
-                    >
-                      {isRunningThis ? (
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                      ) : (
-                        <Play className="w-3 h-3" />
-                      )}
-                      <span>Run</span>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Local Branches */}
+          {/* Local Branches */}
         <div className="border-b border-white/5">
           <button
             onClick={() => toggle('branches')}
@@ -763,6 +685,25 @@ export const LeftSidebar: React.FC = () => {
           )}
         </div>
       </aside>
+
+      {/* Vertical Resize Handle */}
+      <div
+        onMouseDown={startResizing}
+        className={`absolute top-0 right-[-3px] w-2 h-full cursor-col-resize z-20 group transition-colors ${
+          isResizing
+            ? 'bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.8)]'
+            : 'hover:bg-sky-500/50'
+        }`}
+        title="Drag to resize sidebar"
+      />
+    </div>
+
+    {/* Full-screen capture overlay during resize */}
+    {isResizing &&
+      createPortal(
+        <div className="fixed inset-0 z-[9999] cursor-col-resize select-none" />,
+        document.body
+      )}
 
       {/* In-App PR Detail Modal */}
       {selectedPR &&

@@ -210,6 +210,7 @@ interface GitStoreState {
   // Graph UI setters
   setGraphStyle: (style: GraphStyle) => void;
   toggleBranchSelection: (branch: string) => Promise<void>;
+  selectBranchOnly: (branch: string) => Promise<void>;
   clearBranchSelection: () => Promise<void>;
   setSearchQuery: (q: string) => void;
   setCommitOrdering: (order: 'date' | 'topo' | 'author-date') => Promise<void>;
@@ -1853,14 +1854,15 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
 
     refreshActiveRepo: async () => {
-      const { tabs, activeTabId, selectedBranches, commitOrdering, firstParentOnly } = get();
+      const { tabs, activeTabId, selectedBranches, commitOrdering, firstParentOnly, currentBranch: prevBranch } = get();
       const activeTab = tabs.find((t) => t.id === activeTabId);
       if (!activeTab) return;
 
       set({ isLoading: true });
       try {
+        let targetSelectedBranches = selectedBranches;
         const state = await loadRepositoryState(activeTab.path, {
-          selectedBranches,
+          selectedBranches: targetSelectedBranches,
           CommitOrdering: commitOrdering,
           firstParentOnly,
         });
@@ -1868,9 +1870,33 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         // Guard: Abort if user switched tabs while loading repository state
         if (get().activeTabId !== activeTabId) return;
 
+        // Auto-filter to active branch by default, and auto-filter to new branch on branch switch
+        const isBranchSwitched = Boolean(
+          prevBranch &&
+          prevBranch !== '...' &&
+          state.currentBranch &&
+          state.currentBranch !== prevBranch
+        );
+        const isInitialEmpty = Boolean(
+          (targetSelectedBranches.length === 0 || (targetSelectedBranches.length === 1 && targetSelectedBranches[0] === '...')) &&
+          state.currentBranch
+        );
+
+        if (isBranchSwitched || isInitialEmpty) {
+          targetSelectedBranches = [state.currentBranch];
+          // Re-fetch commits specifically for the new active branch
+          const refilteredState = await loadRepositoryState(activeTab.path, {
+            selectedBranches: targetSelectedBranches,
+            CommitOrdering: commitOrdering,
+            firstParentOnly,
+          });
+          state.commits = refilteredState.commits;
+          state.headHash = refilteredState.headHash;
+        }
+
         const validRefSet = new Set(state.refs.map((r) => r.name));
-        const sanitizedSelectedBranches = get().selectedBranches.filter((b) =>
-          validRefSet.has(b)
+        const sanitizedSelectedBranches = targetSelectedBranches.filter((b) =>
+          b === '__ALL__' || validRefSet.has(b)
         );
 
         const conflictCount = state.workingFiles.filter((f) => f.conflicted).length;
@@ -1931,25 +1957,37 @@ export const useGitStore = create<GitStoreState>((set, get) => {
 
     toggleBranchSelection: async (branch: string) => {
       const { selectedBranches, tabs, activeTabId } = get();
-      const exists = selectedBranches.includes(branch);
+      const cleanList = selectedBranches.filter((b) => b !== '__ALL__');
+      const exists = cleanList.includes(branch);
       const next = exists
-        ? selectedBranches.filter((b) => b !== branch)
-        : [...selectedBranches, branch];
+        ? cleanList.filter((b) => b !== branch)
+        : [...cleanList, branch];
+      const finalNext = next.length === 0 ? ['__ALL__'] : next;
       const updatedTabs = tabs.map((t) =>
-        t.id === activeTabId ? { ...t, selectedBranches: next } : t
+        t.id === activeTabId ? { ...t, selectedBranches: finalNext } : t
       );
       localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
-      set({ selectedBranches: next, tabs: updatedTabs });
+      set({ selectedBranches: finalNext, tabs: updatedTabs });
+      await get().refreshActiveRepo();
+    },
+
+    selectBranchOnly: async (branch: string) => {
+      const { tabs, activeTabId } = get();
+      const updatedTabs = tabs.map((t) =>
+        t.id === activeTabId ? { ...t, selectedBranches: [branch] } : t
+      );
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+      set({ selectedBranches: [branch], tabs: updatedTabs });
       await get().refreshActiveRepo();
     },
 
     clearBranchSelection: async () => {
       const { tabs, activeTabId } = get();
       const updatedTabs = tabs.map((t) =>
-        t.id === activeTabId ? { ...t, selectedBranches: [] } : t
+        t.id === activeTabId ? { ...t, selectedBranches: ['__ALL__'] } : t
       );
       localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
-      set({ selectedBranches: [], tabs: updatedTabs });
+      set({ selectedBranches: ['__ALL__'], tabs: updatedTabs });
       await get().refreshActiveRepo();
     },
 

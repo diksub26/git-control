@@ -445,7 +445,7 @@ export async function loadRepositoryState(
   // 4. Fetch Git Log for Graph (only include selected branches that exist in this repo)
   const validRefNames = new Set(refs.map((r) => r.name));
   const validSelectedBranches = (options.selectedBranches || []).filter((b) =>
-    validRefNames.has(b)
+    b !== '__ALL__' && validRefNames.has(b)
   );
   const branchArg =
     validSelectedBranches.length > 0
