@@ -874,22 +874,24 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         runningOpLabel: `Running workflow '${wf.name}' (1/${wf.steps.length})`,
       });
 
+      const effectiveEmail = gitIdentity.effectiveEmail?.toLowerCase().trim();
+      const repoOwner = remoteInfo?.owner?.toLowerCase().trim();
+
       const matchedAccount =
-        (remoteInfo &&
-          accounts.find(
-            (a) =>
-              a.token &&
-              a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
-          )) ||
-        accounts.find(
-          (a) =>
-            a.token &&
-            a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
-        ) ||
-        (remoteInfo &&
-          accounts.find(
-            (a) => a.token && a.provider === remoteInfo.provider
-          ));
+        (effectiveEmail
+          ? accounts.find(
+              (a) =>
+                a.token &&
+                a.email.toLowerCase().trim() === effectiveEmail
+            )
+          : null) ||
+        (repoOwner
+          ? accounts.find(
+              (a) =>
+                a.token &&
+                a.username.toLowerCase().trim() === repoOwner
+            )
+          : null);
 
       let allSucceeded = true;
 
@@ -1029,20 +1031,24 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       });
 
       try {
+        const effectiveEmail = gitIdentity.effectiveEmail?.toLowerCase().trim();
+        const repoOwner = remoteInfo?.owner?.toLowerCase().trim();
+
         const matchedAccount =
-          accounts.find(
-            (a) =>
-              a.token &&
-              a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
-          ) ||
-          accounts.find(
-            (a) =>
-              a.token &&
-              a.provider === remoteInfo.provider &&
-              a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
-          ) ||
-          accounts.find((a) => a.token && a.provider === remoteInfo.provider) ||
-          accounts.find((a) => Boolean(a.token));
+          (effectiveEmail
+            ? accounts.find(
+                (a) =>
+                  a.token &&
+                  a.email.toLowerCase().trim() === effectiveEmail
+              )
+            : null) ||
+          (repoOwner
+            ? accounts.find(
+                (a) =>
+                  a.token &&
+                  a.username.toLowerCase().trim() === repoOwner
+              )
+            : null);
 
         let tokenToUse = matchedAccount?.token || githubToken;
         if (!tokenToUse) {
@@ -1358,7 +1364,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
 
     refreshGitIdentity: async () => {
-      const { tabs, activeTabId, accounts } = get();
+      const { tabs, activeTabId, accounts, remoteInfo } = get();
       const activeTab = tabs.find((t) => t.id === activeTabId);
       const identity = await getGitConfigIdentity(activeTab?.path);
 
@@ -1368,25 +1374,55 @@ export const useGitStore = create<GitStoreState>((set, get) => {
 
       const ensureIdentityInAccounts = (name: string, email: string) => {
         if (!name || !email) return;
-        const exists = nextAccounts.some(
-          (a) => a.email.toLowerCase() === email.toLowerCase()
+        const cleanName = name.trim();
+        const cleanEmail = email.trim();
+        const lowerEmail = cleanEmail.toLowerCase();
+
+        const isGithubEmail = lowerEmail.includes('github.com');
+        const isGitlabEmail = lowerEmail.includes('gitlab.com');
+        const inferredProvider = isGithubEmail
+          ? 'github'
+          : isGitlabEmail
+          ? 'gitlab'
+          : (remoteInfo?.provider && remoteInfo.provider !== 'unknown'
+              ? remoteInfo.provider
+              : 'github');
+
+        const inferredUsername =
+          cleanName && !cleanName.includes(' ')
+            ? cleanName
+            : cleanEmail.split('@')[0].replace(/^\d+\+/, '');
+
+        const existingAcc = nextAccounts.find(
+          (a) => a.email.toLowerCase() === lowerEmail
         );
-        if (!exists) {
-          const isGithubEmail = email.toLowerCase().includes('github.com');
-          const isGitlabEmail = email.toLowerCase().includes('gitlab.com');
+
+        if (!existingAcc) {
           nextAccounts.push({
             id: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            provider: isGithubEmail
-              ? 'github'
-              : isGitlabEmail
-              ? 'gitlab'
-              : 'custom',
-            name,
-            email,
-            username: email.split('@')[0].replace(/^\d+\+/, ''),
+            provider: inferredProvider,
+            name: cleanName,
+            email: cleanEmail,
+            username: inferredUsername,
             lastUsedAt: Date.now(),
           });
           changed = true;
+        } else {
+          // If auto-imported account previously defaulted to 'custom', upgrade to inferred provider
+          if (existingAcc.provider === 'custom') {
+            existingAcc.provider = inferredProvider;
+            changed = true;
+          }
+          // If username was naively set to email prefix while name is a clean username
+          if (
+            cleanName &&
+            !cleanName.includes(' ') &&
+            (existingAcc.username.includes('@') ||
+              existingAcc.username === cleanEmail.split('@')[0].replace(/^\d+\+/, ''))
+          ) {
+            existingAcc.username = cleanName;
+            changed = true;
+          }
         }
       };
 
@@ -1397,22 +1433,30 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         localStorage.setItem(SAVED_ACCOUNTS_KEY, JSON.stringify(nextAccounts));
       }
 
-      // Sync active account token for PR/Issue fetching if available
-      const matchedAccount =
-        nextAccounts.find(
-          (a) =>
-            a.email.toLowerCase() === identity.effectiveEmail.toLowerCase() &&
-            a.token
-        ) || nextAccounts.find((a) => Boolean(a.token));
-      if (matchedAccount?.token && matchedAccount.token !== get().githubToken) {
-        localStorage.setItem('git-control-gh-token', matchedAccount.token);
-        set({
-          gitIdentity: identity,
-          accounts: nextAccounts,
-          githubToken: matchedAccount.token,
-        });
+      // Sync active account token for PR/Issue fetching if available (ONLY for the active identity)
+      const effectiveEmail = identity.effectiveEmail?.toLowerCase().trim();
+      const matchedAccount = effectiveEmail
+        ? nextAccounts.find(
+            (a) =>
+              a.email.toLowerCase().trim() === effectiveEmail &&
+              a.token
+          )
+        : null;
+
+      if (matchedAccount?.token) {
+        if (matchedAccount.token !== get().githubToken) {
+          localStorage.setItem('git-control-gh-token', matchedAccount.token);
+          set({
+            gitIdentity: identity,
+            accounts: nextAccounts,
+            githubToken: matchedAccount.token,
+          });
+        } else {
+          set({ gitIdentity: identity, accounts: nextAccounts });
+        }
       } else {
-        set({ gitIdentity: identity, accounts: nextAccounts });
+        localStorage.removeItem('git-control-gh-token');
+        set({ gitIdentity: identity, accounts: nextAccounts, githubToken: '' });
       }
     },
 
@@ -1513,7 +1557,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           localStorage.setItem('git-control-gh-token', account.token);
           set({ accounts: updatedAccounts, githubToken: account.token });
         } else {
-          set({ accounts: updatedAccounts });
+          localStorage.removeItem('git-control-gh-token');
+          set({ accounts: updatedAccounts, githubToken: '' });
         }
         await get().refreshGitIdentity();
         get().showToast(
@@ -1946,22 +1991,28 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       try {
         let finalArgs = args;
         if (remoteOp === 'fetch' || remoteOp === 'pull' || remoteOp === 'push') {
+          // STRICT account matching: only inject token if an account matching the active repository
+          // identity (effectiveEmail) or repo owner specifically has a token configured.
+          // NEVER fallback to another account's token (e.g. personal account token for work repo),
+          // which causes authentication failures and wipes the system credential.helper.
+          const effectiveEmail = gitIdentity.effectiveEmail?.toLowerCase().trim();
+          const repoOwner = remoteInfo?.owner?.toLowerCase().trim();
+
           const matchedAccount =
-            (remoteInfo &&
-              accounts.find(
-                (a) =>
-                  a.token &&
-                  a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
-              )) ||
-            accounts.find(
-              (a) =>
-                a.token &&
-                a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
-            ) ||
-            (remoteInfo &&
-              accounts.find(
-                (a) => a.token && a.provider === remoteInfo.provider
-              ));
+            (effectiveEmail
+              ? accounts.find(
+                  (a) =>
+                    a.token &&
+                    a.email.toLowerCase().trim() === effectiveEmail
+                )
+              : null) ||
+            (repoOwner
+              ? accounts.find(
+                  (a) =>
+                    a.token &&
+                    a.username.toLowerCase().trim() === repoOwner
+                )
+              : null);
 
           if (matchedAccount?.token) {
             const authUser = matchedAccount.username || 'x-access-token';
@@ -2056,25 +2107,49 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       const isManual = Boolean(opts?.manual);
 
       // STRICT: only the account linked to this repository is used.
-      // Linked = account username equals the remote owner, otherwise the account whose
-      // email matches the repo's effective git user.email (same provider).
-      // No fallback to other saved accounts, cached tokens, or system credentials.
+      // Linked = account whose email matches the repo's effective git user.email,
+      // otherwise username equals the remote owner.
+      // No fallback to other saved accounts with different identities.
+      const effectiveEmail = gitIdentity.effectiveEmail?.toLowerCase().trim();
+      const repoOwner = remoteInfo.owner?.toLowerCase().trim();
+
       const linkedAccount =
-        accounts.find(
-          (a) =>
-            a.provider === remoteInfo.provider &&
-            a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
-        ) ||
-        accounts.find(
-          (a) =>
-            a.provider === remoteInfo.provider &&
-            Boolean(gitIdentity.effectiveEmail) &&
-            a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
-        );
-      const linkedToken = linkedAccount?.token?.trim() || '';
+        (effectiveEmail
+          ? accounts.find(
+              (a) =>
+                a.email.toLowerCase().trim() === effectiveEmail &&
+                (a.provider === remoteInfo.provider || a.provider === 'custom')
+            )
+          : null) ||
+        (repoOwner
+          ? accounts.find(
+              (a) =>
+                a.username.toLowerCase().trim() === repoOwner &&
+                (a.provider === remoteInfo.provider || a.provider === 'custom')
+            )
+          : null);
+
+      let linkedToken = linkedAccount?.token?.trim() || '';
+
+      // If active account has no token in Git Control, try resolving system credential token (e.g. GitHub CLI `gh auth token` or Git Credential Manager)
+      if (!linkedToken && activeTab?.path) {
+        const host =
+          remoteInfo.provider === 'gitlab'
+            ? 'gitlab.com'
+            : 'github.com';
+        try {
+          const sysToken = await resolveGitCredentialToken(activeTab.path, host);
+          if (sysToken) {
+            linkedToken = sysToken;
+          }
+        } catch {
+          // Ignore resolution failure
+        }
+      }
+
       const accountLabel = linkedAccount
         ? linkedAccount.username || linkedAccount.email
-        : '';
+        : gitIdentity.effectiveName || gitIdentity.effectiveEmail || '';
 
       const notify = (key: string, message: string) => {
         const fullKey = `${activeTab?.path || ''}|${key}`;
@@ -2116,7 +2191,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
             result = await fetchRemotePullRequestsAndIssues(remoteInfo);
             if (!linkedToken) lastPrAuthErrorKey = '';
           } catch (err: any) {
-            if (!linkedToken) {
+            if (!linkedToken && isManual) {
               const status = err instanceof RemoteApiError ? err.status : 0;
               notify(
                 `noaccount:${status}`,
