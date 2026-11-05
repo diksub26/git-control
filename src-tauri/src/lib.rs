@@ -114,6 +114,83 @@ async fn write_conflict_file(
     fs::write(full, content).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+async fn resolve_git_credential_token(repo_path: String, host: String) -> Option<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let clean_host = host
+            .trim()
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or("github.com")
+            .to_string();
+
+        // 1. Try GitHub CLI (`gh auth token`) if host is GitHub
+        if clean_host.contains("github") {
+            let mut gh_cmd = Command::new("gh");
+            gh_cmd.args(["auth", "token", "--hostname", &clean_host]);
+            #[cfg(target_os = "windows")]
+            {
+                const CREATE_NO_WINDOW: u32 = 0x08000000;
+                gh_cmd.creation_flags(CREATE_NO_WINDOW);
+            }
+            if let Ok(output) = gh_cmd.output() {
+                if output.status.success() {
+                    let token = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !token.is_empty() {
+                        return Some(token);
+                    }
+                }
+            }
+        }
+
+        // 2. Try Git Credential Manager (`git -c credential.interactive=never credential fill`)
+        let mut git_cmd = Command::new("git");
+        if !repo_path.trim().is_empty() && PathBuf::from(&repo_path).exists() {
+            git_cmd.current_dir(&repo_path);
+        }
+        git_cmd
+            .args(["-c", "credential.interactive=never", "credential", "fill"])
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .env("GCM_INTERACTIVE", "never")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
+        #[cfg(target_os = "windows")]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            git_cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        if let Ok(mut child) = git_cmd.spawn() {
+            if let Some(mut stdin_pipe) = child.stdin.take() {
+                let query = format!("protocol=https\nhost={}\n\n", clean_host);
+                let _ = stdin_pipe.write_all(query.as_bytes());
+            }
+            if let Ok(output) = child.wait_with_output() {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    for line in stdout.lines() {
+                        if let Some(pw) = line.strip_prefix("password=") {
+                            let trimmed = pw.trim();
+                            if !trimmed.is_empty() {
+                                return Some(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectedIde {
@@ -825,6 +902,47 @@ async fn watch_repository(
     Ok(())
 }
 
+#[tauri::command]
+async fn open_external_url(url: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let trimmed = url.trim();
+        if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+            return Err("Only http/https URLs are allowed".to_string());
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            let mut cmd = Command::new("rundll32");
+            cmd.args(["url.dll,FileProtocolHandler", trimmed]);
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            cmd.spawn()
+                .map_err(|e| format!("Failed to open browser: {}", e))?;
+            Ok(())
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            Command::new("open")
+                .arg(trimmed)
+                .spawn()
+                .map_err(|e| format!("Failed to open browser: {}", e))?;
+            Ok(())
+        }
+
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            Command::new("xdg-open")
+                .arg(trimmed)
+                .spawn()
+                .map_err(|e| format!("Failed to open browser: {}", e))?;
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(WatcherState {
@@ -860,9 +978,11 @@ pub fn run() {
             pick_folder,
             pick_executable,
             detect_installed_ides,
+            resolve_git_credential_token,
             read_conflict_file,
             write_conflict_file,
             open_in_external_editor,
+            open_external_url,
             watch_repository
         ])
         .run(tauri::generate_context!())

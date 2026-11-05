@@ -147,6 +147,19 @@ export async function openInExternalEditor(
   }
 }
 
+export async function openExternalUrl(url: string): Promise<void> {
+  if (!url) return;
+  if (isTauriRuntime()) {
+    try {
+      await invoke('open_external_url', { url });
+      return;
+    } catch {
+      // Fallback to window.open
+    }
+  }
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 export async function detectInstalledIdes(): Promise<IdeConfig[]> {
   if (isTauriRuntime()) {
     return await invoke<IdeConfig[]>('detect_installed_ides');
@@ -212,6 +225,23 @@ export async function detectInstalledIdes(): Promise<IdeConfig[]> {
 export async function pickIdeExecutable(): Promise<string | null> {
   if (isTauriRuntime()) {
     return await invoke<string | null>('pick_executable');
+  }
+  return null;
+}
+
+export async function resolveGitCredentialToken(
+  repoPath: string,
+  host: string
+): Promise<string | null> {
+  if (isTauriRuntime()) {
+    try {
+      return await invoke<string | null>('resolve_git_credential_token', {
+        repoPath,
+        host,
+      });
+    } catch {
+      return null;
+    }
   }
   return null;
 }
@@ -1030,6 +1060,128 @@ export async function fetchRemotePullRequestsAndIssues(
   }
 
   return { pullRequests: [], issues: [] };
+}
+
+/**
+ * Creates a Pull Request (GitHub) or Merge Request (GitLab) directly via REST API
+ */
+export async function createRemotePullRequest(params: {
+  remoteInfo: RemoteHostInfo;
+  token: string;
+  title: string;
+  body?: string;
+  headBranch: string;
+  baseBranch: string;
+  draft?: boolean;
+}): Promise<RemotePullRequest> {
+  const { remoteInfo, token, title, body, headBranch, baseBranch, draft } = params;
+  const cleanToken = token.trim();
+  if (!cleanToken) {
+    throw new Error('Authentication token is required to create a Pull Request.');
+  }
+
+  if (remoteInfo.provider === 'github') {
+    const res = await fetch(
+      `https://api.github.com/repos/${remoteInfo.owner}/${remoteInfo.repo}/pulls`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cleanToken}`,
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          body: (body || '').trim(),
+          head: headBranch.trim(),
+          base: baseBranch.trim(),
+          draft: Boolean(draft),
+        }),
+      }
+    );
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const errDetail =
+        Array.isArray(data.errors) && data.errors[0]?.message
+          ? ` (${data.errors[0].message})`
+          : '';
+      throw new Error(
+        data.message
+          ? `${data.message}${errDetail}`
+          : `GitHub API returned HTTP ${res.status}`
+      );
+    }
+
+    return {
+      id: data.id,
+      number: data.number,
+      title: data.title,
+      state: data.merged_at ? 'merged' : data.state || 'open',
+      author: data.user?.login || 'user',
+      authorAvatar: data.user?.avatar_url,
+      sourceBranch: data.head?.ref || headBranch,
+      targetBranch: data.base?.ref || baseBranch,
+      updatedAt: new Date(data.updated_at || Date.now()).toLocaleDateString(),
+      url: data.html_url,
+      body: data.body || '',
+      commentsCount: data.comments || 0,
+    };
+  }
+
+  if (remoteInfo.provider === 'gitlab') {
+    const projectPath = encodeURIComponent(
+      `${remoteInfo.owner}/${remoteInfo.repo}`
+    );
+    const res = await fetch(
+      `https://gitlab.com/api/v4/projects/${projectPath}/merge_requests`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${cleanToken}`,
+        },
+        body: JSON.stringify({
+          source_branch: headBranch.trim(),
+          target_branch: baseBranch.trim(),
+          title: draft ? `Draft: ${title.trim()}` : title.trim(),
+          description: (body || '').trim(),
+        }),
+      }
+    );
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(
+        data.message || data.error || `GitLab API returned HTTP ${res.status}`
+      );
+    }
+
+    return {
+      id: data.id,
+      number: data.iid,
+      title: data.title,
+      state:
+        data.state === 'merged'
+          ? 'merged'
+          : data.state === 'opened'
+          ? 'open'
+          : 'closed',
+      author: data.author?.username || 'user',
+      authorAvatar: data.author?.avatar_url,
+      sourceBranch: data.source_branch || headBranch,
+      targetBranch: data.target_branch || baseBranch,
+      updatedAt: new Date(data.updated_at || Date.now()).toLocaleDateString(),
+      url: data.web_url,
+      body: data.description || '',
+      commentsCount: data.user_notes_count || 0,
+    };
+  }
+
+  throw new Error(
+    'In-app PR creation is supported for GitHub and GitLab repositories.'
+  );
 }
 
 /**

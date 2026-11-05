@@ -19,6 +19,7 @@ import {
 } from '../types/git';
 import {
   clearLocalGitConfigIdentity,
+  createRemotePullRequest,
   createRemoteRepositoryViaApi,
   detectInstalledIdes,
   execGit,
@@ -30,6 +31,7 @@ import {
   loadRepositoryState,
   onGitCommandLog,
   openInExternalEditor,
+  resolveGitCredentialToken,
   setGitConfigIdentity,
 } from '../services/gitService';
 
@@ -62,6 +64,7 @@ interface GitStoreState {
   gitIdentity: GitConfigIdentity;
   isAccountModalOpen: boolean;
   isPublishModalOpen: boolean;
+  isCreatePRModalOpen: boolean;
   isIdeModalOpen: boolean;
   ideModalInitialFilter: 'all' | 'ide' | 'ai-harness';
   detectedIdes: IdeConfig[];
@@ -117,6 +120,15 @@ interface GitStoreState {
   setRepoModalOpen: (open: boolean) => void;
   setAccountModalOpen: (open: boolean) => void;
   setPublishModalOpen: (open: boolean) => void;
+  setCreatePRModalOpen: (open: boolean) => void;
+  createPullRequest: (params: {
+    title: string;
+    body?: string;
+    headBranch: string;
+    baseBranch: string;
+    draft?: boolean;
+    pushBranchFirst?: boolean;
+  }) => Promise<RemotePullRequest | null>;
   setIdeModalOpen: (
     open: boolean,
     initialFilter?: 'all' | 'ide' | 'ai-harness'
@@ -299,6 +311,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
     isAccountModalOpen: false,
     isPublishModalOpen: false,
+    isCreatePRModalOpen: false,
     isIdeModalOpen: false,
     ideModalInitialFilter: 'all',
     detectedIdes: [],
@@ -631,6 +644,134 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       }
     },
 
+    setCreatePRModalOpen: (isCreatePRModalOpen: boolean) => {
+      set({ isCreatePRModalOpen });
+    },
+
+    createPullRequest: async (params) => {
+      const {
+        tabs,
+        activeTabId,
+        remoteInfo,
+        accounts,
+        gitIdentity,
+        githubToken,
+      } = get();
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      if (!activeTab || !remoteInfo) {
+        get().showToast(
+          'No GitHub or GitLab remote configured for this repository',
+          'error'
+        );
+        return null;
+      }
+
+      set({
+        runningOpLabel: `Creating Pull Request (${params.headBranch} → ${params.baseBranch})`,
+        activeRemoteOp: 'pr-sync',
+      });
+
+      try {
+        const matchedAccount =
+          accounts.find(
+            (a) =>
+              a.token &&
+              a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
+          ) ||
+          accounts.find(
+            (a) =>
+              a.token &&
+              a.provider === remoteInfo.provider &&
+              a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
+          ) ||
+          accounts.find((a) => a.token && a.provider === remoteInfo.provider) ||
+          accounts.find((a) => Boolean(a.token));
+
+        let tokenToUse = matchedAccount?.token || githubToken;
+        if (!tokenToUse) {
+          const host =
+            remoteInfo.provider === 'gitlab' ? 'gitlab.com' : 'github.com';
+          const sysToken = await resolveGitCredentialToken(
+            activeTab.path,
+            host
+          );
+          if (sysToken) {
+            tokenToUse = sysToken;
+            set({ githubToken: sysToken });
+          }
+        }
+
+        if (!tokenToUse) {
+          get().showToast(
+            'Authentication token required. Please login via Git Account Manager or GitHub CLI.',
+            'error'
+          );
+          return null;
+        }
+
+        // Push headBranch to origin first if requested
+        if (params.pushBranchFirst) {
+          set({
+            runningOpLabel: `Pushing branch '${params.headBranch}' to origin`,
+          });
+          const pushArgs = ['push', '-u', 'origin', params.headBranch];
+          let pushRes;
+          if (matchedAccount?.token) {
+            const authUser = matchedAccount.username || 'x-access-token';
+            const basicToken = btoa(`${authUser}:${matchedAccount.token}`);
+            pushRes = await execGit(activeTab.path, [
+              '-c',
+              'credential.helper=',
+              '-c',
+              `http.extraHeader=Authorization: Basic ${basicToken}`,
+              ...pushArgs,
+            ]);
+          } else {
+            pushRes = await execGit(activeTab.path, pushArgs);
+          }
+          if (pushRes.exitCode !== 0) {
+            get().showToast(
+              `Failed to push '${params.headBranch}' before creating PR: ${
+                pushRes.stderr.trim() || pushRes.stdout.trim()
+              }`,
+              'error'
+            );
+            return null;
+          }
+        }
+
+        set({
+          runningOpLabel: `Creating Pull Request #... on ${remoteInfo.owner}/${remoteInfo.repo}`,
+        });
+
+        const createdPR = await createRemotePullRequest({
+          remoteInfo,
+          token: tokenToUse,
+          title: params.title,
+          body: params.body,
+          headBranch: params.headBranch,
+          baseBranch: params.baseBranch,
+          draft: params.draft,
+        });
+
+        get().showToast(
+          `Created Pull Request #${createdPR.number}: ${createdPR.title}`,
+          'success'
+        );
+        await get().loadRemotePRsAndIssues();
+        await get().refreshActiveRepo();
+        return createdPR;
+      } catch (err: any) {
+        get().showToast(
+          `Failed to create Pull Request: ${err?.message || err}`,
+          'error'
+        );
+        return null;
+      } finally {
+        set({ runningOpLabel: null, activeRemoteOp: null });
+      }
+    },
+
     initLocalRepository: async () => {
       const { tabs, activeTabId } = get();
       const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -718,8 +859,20 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           : accounts.find((a) => Boolean(a.token));
 
         if (params.mode === 'create-api') {
-          const tokenToUse = selectedAccount?.token || githubToken;
           const providerToUse = selectedAccount?.provider || 'github';
+          const defaultHost =
+            selectedAccount?.hostUrl ||
+            (providerToUse === 'gitlab' ? 'gitlab.com' : 'github.com');
+          let tokenToUse = selectedAccount?.token || githubToken;
+          if (!tokenToUse) {
+            const sysToken = await resolveGitCredentialToken(
+              activeTab.path,
+              defaultHost
+            );
+            if (sysToken) {
+              tokenToUse = sysToken;
+            }
+          }
           if (!tokenToUse) {
             get().showToast(
               'Please login with a GitHub or GitLab Personal Access Token first',
@@ -888,11 +1041,12 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       }
 
       // Sync active account token for PR/Issue fetching if available
-      const matchedAccount = nextAccounts.find(
-        (a) =>
-          a.email.toLowerCase() === identity.effectiveEmail.toLowerCase() &&
-          a.token
-      );
+      const matchedAccount =
+        nextAccounts.find(
+          (a) =>
+            a.email.toLowerCase() === identity.effectiveEmail.toLowerCase() &&
+            a.token
+        ) || nextAccounts.find((a) => Boolean(a.token));
       if (matchedAccount?.token && matchedAccount.token !== get().githubToken) {
         localStorage.setItem('git-control-gh-token', matchedAccount.token);
         set({
@@ -1411,7 +1565,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     clearCommandLogs: () => set({ commandLogs: [] }),
 
     runGitOp: async (label: string, args: string[]) => {
-      const { tabs, activeTabId } = get();
+      const { tabs, activeTabId, accounts, remoteInfo, gitIdentity } = get();
       const activeTab = tabs.find((t) => t.id === activeTabId);
       if (!activeTab) return false;
 
@@ -1433,7 +1587,39 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       });
 
       try {
-        const res = await execGit(activeTab.path, args);
+        let finalArgs = args;
+        if (remoteOp === 'fetch' || remoteOp === 'pull' || remoteOp === 'push') {
+          const matchedAccount =
+            (remoteInfo &&
+              accounts.find(
+                (a) =>
+                  a.token &&
+                  a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
+              )) ||
+            accounts.find(
+              (a) =>
+                a.token &&
+                a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
+            ) ||
+            (remoteInfo &&
+              accounts.find(
+                (a) => a.token && a.provider === remoteInfo.provider
+              ));
+
+          if (matchedAccount?.token) {
+            const authUser = matchedAccount.username || 'x-access-token';
+            const basicToken = btoa(`${authUser}:${matchedAccount.token}`);
+            finalArgs = [
+              '-c',
+              'credential.helper=',
+              '-c',
+              `http.extraHeader=Authorization: Basic ${basicToken}`,
+              ...args,
+            ];
+          }
+        }
+
+        const res = await execGit(activeTab.path, finalArgs);
         if (res.exitCode === 0) {
           get().showToast(`${label} succeeded`, 'success');
           await get().refreshActiveRepo();
@@ -1507,15 +1693,46 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
 
     loadRemotePRsAndIssues: async () => {
-      const { remoteInfo, githubToken } = get();
+      const { remoteInfo, githubToken, accounts, gitIdentity, tabs, activeTabId } =
+        get();
       if (!remoteInfo || remoteInfo.provider === 'unknown') return;
       set((s) => ({
         activeRemoteOp: s.activeRemoteOp || 'pr-sync',
       }));
       try {
+        const activeTab = tabs.find((t) => t.id === activeTabId);
+        const matchedAccount =
+          accounts.find(
+            (a) =>
+              a.token &&
+              a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
+          ) ||
+          accounts.find(
+            (a) =>
+              a.token &&
+              a.provider === remoteInfo.provider &&
+              a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
+          ) ||
+          accounts.find((a) => a.token && a.provider === remoteInfo.provider) ||
+          accounts.find((a) => Boolean(a.token));
+
+        let tokenToUse = matchedAccount?.token || githubToken;
+        if (!tokenToUse) {
+          const host =
+            remoteInfo.provider === 'gitlab' ? 'gitlab.com' : 'github.com';
+          const sysToken = await resolveGitCredentialToken(
+            activeTab?.path || '',
+            host
+          );
+          if (sysToken) {
+            tokenToUse = sysToken;
+            set({ githubToken: sysToken });
+          }
+        }
+
         const { pullRequests, issues } = await fetchRemotePullRequestsAndIssues(
           remoteInfo,
-          githubToken
+          tokenToUse
         );
         set({ pullRequests, issues });
       } catch {

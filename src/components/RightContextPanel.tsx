@@ -14,6 +14,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { openExternalUrl } from '../services/gitService';
 import { getAuthorAvatarUrl } from '../utils/avatar';
 
 export const RightContextPanel: React.FC = () => {
@@ -415,15 +416,16 @@ export const RightContextPanel: React.FC = () => {
             <Copy className="w-3.5 h-3.5" />
           </button>
           {remoteInfo && (
-            <a
-              href={`${remoteInfo.webUrl}/commit/${selectedCommit.hash}`}
-              target="_blank"
-              rel="noreferrer"
+            <button
+              type="button"
+              onClick={() =>
+                openExternalUrl(`${remoteInfo.webUrl}/commit/${selectedCommit.hash}`)
+              }
               className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-sky-300"
               title="Open Commit on Remote"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-            </a>
+            </button>
           )}
         </div>
       </div>

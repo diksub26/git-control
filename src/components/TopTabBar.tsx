@@ -22,6 +22,7 @@ import {
   UploadCloud,
   ChevronDown,
   Bot,
+  GitPullRequest,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import { pickRepositoryFolder } from '../services/gitService';
@@ -48,6 +49,7 @@ export const TopTabBar: React.FC = () => {
     setRepoModalOpen,
     setAccountModalOpen,
     setPublishModalOpen,
+    setCreatePRModalOpen,
     setIdeModalOpen,
     openActiveRepoInIde,
     openActiveRepoInAiHarness,
@@ -298,20 +300,15 @@ export const TopTabBar: React.FC = () => {
 
           {remoteInfo ? (
             <div className="flex items-center gap-1">
-              <a
-                href={
-                  remoteInfo.provider === 'github'
-                    ? `${remoteInfo.webUrl}/compare/${currentBranch}?expand=1`
-                    : `${remoteInfo.webUrl}`
-                }
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/25 transition"
-                title="Create Pull Request / Open Remote"
+              <button
+                type="button"
+                onClick={() => setCreatePRModalOpen(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-pink-200 bg-pink-500/15 hover:bg-pink-500/25 border border-pink-400/30 transition"
+                title="Create Pull Request / Merge Request"
               >
-                <ExternalLink className="w-3.5 h-3.5" />
+                <GitPullRequest className="w-3.5 h-3.5 text-pink-400" />
                 <span>Create PR</span>
-              </a>
+              </button>
               <button
                 onClick={() => setPublishModalOpen(true)}
                 className="p-1.5 rounded-lg text-slate-300 bg-white/[0.04] hover:bg-white/10 border border-white/10 transition"
