@@ -6,15 +6,41 @@ import { RepoToolbar } from './components/RepoToolbar';
 import { LeftSidebar } from './components/LeftSidebar';
 import { GitGraphView } from './components/GitGraphView';
 import { RightContextPanel } from './components/RightContextPanel';
-import { DiffAndConflictModal } from './components/DiffAndConflictModal';
 import { CommandLogDrawer } from './components/CommandLogDrawer';
-import { GitAccountModal } from './components/GitAccountModal';
-import { PublishRepoModal } from './components/PublishRepoModal';
-import { CreatePRModal } from './components/CreatePRModal';
-import { IdeIntegrationModal } from './components/IdeIntegrationModal';
-import { GitWorkflowModal } from './components/GitWorkflowModal';
 import { useGitStore } from './store/useGitStore';
 import { startWatchingRepository } from './services/gitService';
+
+// Lazy-loaded modal components for fast startup & reduced RAM usage
+const DiffAndConflictModal = React.lazy(() =>
+  import('./components/DiffAndConflictModal').then((m) => ({
+    default: m.DiffAndConflictModal,
+  }))
+);
+const GitAccountModal = React.lazy(() =>
+  import('./components/GitAccountModal').then((m) => ({
+    default: m.GitAccountModal,
+  }))
+);
+const PublishRepoModal = React.lazy(() =>
+  import('./components/PublishRepoModal').then((m) => ({
+    default: m.PublishRepoModal,
+  }))
+);
+const CreatePRModal = React.lazy(() =>
+  import('./components/CreatePRModal').then((m) => ({
+    default: m.CreatePRModal,
+  }))
+);
+const IdeIntegrationModal = React.lazy(() =>
+  import('./components/IdeIntegrationModal').then((m) => ({
+    default: m.IdeIntegrationModal,
+  }))
+);
+const GitWorkflowModal = React.lazy(() =>
+  import('./components/GitWorkflowModal').then((m) => ({
+    default: m.GitWorkflowModal,
+  }))
+);
 
 export const App: React.FC = () => {
   const {
@@ -27,6 +53,12 @@ export const App: React.FC = () => {
     toast,
     confirmDialog,
     closeConfirm,
+    isAccountModalOpen,
+    isPublishModalOpen,
+    isCreatePRModalOpen,
+    isWorkflowModalOpen,
+    isIdeModalOpen,
+    activeDiffRequest,
   } = useGitStore();
   const [isConfirmRunning, setIsConfirmRunning] = useState(false);
   const activeTab = tabs.find((t) => t.id === activeTabId);
@@ -105,23 +137,15 @@ export const App: React.FC = () => {
       {/* Bottom Git Command Log & Output Console */}
       <CommandLogDrawer />
 
-      {/* Monaco Diff & Hunk Staging / Conflict Resolver Modal */}
-      <DiffAndConflictModal />
-
-      {/* Git Account & Identity Management Modal */}
-      <GitAccountModal />
-
-      {/* Publish Local Repository to Remote Modal */}
-      <PublishRepoModal />
-
-      {/* In-App Create Pull Request Modal */}
-      <CreatePRModal />
-
-      {/* Manage IDE & Editor Integration Modal */}
-      <IdeIntegrationModal />
-
-      {/* Git Workflow Automation & Macro Runner Modal */}
-      <GitWorkflowModal />
+      {/* Lazy-loaded Modals (Monaco diff editor, accounts, publish, PR, IDE, workflows) */}
+      <React.Suspense fallback={null}>
+        {activeDiffRequest && <DiffAndConflictModal />}
+        {isAccountModalOpen && <GitAccountModal />}
+        {isPublishModalOpen && <PublishRepoModal />}
+        {isCreatePRModalOpen && <CreatePRModal />}
+        {isIdeModalOpen && <IdeIntegrationModal />}
+        {isWorkflowModalOpen && <GitWorkflowModal />}
+      </React.Suspense>
 
       {/* Floating Active Git/Remote Operation Loading Pill */}
       {runningOpLabel && (

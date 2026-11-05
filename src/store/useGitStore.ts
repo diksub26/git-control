@@ -1863,6 +1863,16 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       set({ isLoading: true });
       try {
         let targetSelectedBranches = selectedBranches;
+        // Optimization: Pre-populate target branch from activeTab if available to avoid duplicate loadRepositoryState
+        if (
+          (targetSelectedBranches.length === 0 ||
+            (targetSelectedBranches.length === 1 && targetSelectedBranches[0] === '...')) &&
+          activeTab.currentBranch &&
+          activeTab.currentBranch !== '...'
+        ) {
+          targetSelectedBranches = [activeTab.currentBranch];
+        }
+
         const state = await loadRepositoryState(activeTab.path, {
           selectedBranches: targetSelectedBranches,
           CommitOrdering: commitOrdering,

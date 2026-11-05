@@ -22,3 +22,10 @@ window-vibrancy = "0.5"
 rfd = "0.14"
 notify = "6.1"
 keyring = "4.2.0"
+
+[profile.release]
+opt-level = "z"     # Optimize for smallest binary size
+lto = true          # Link-Time Optimization across crates
+codegen-units = 1   # Better inlining / dead-code elimination
+panic = "abort"     # Drop stack-unwinding machinery
+strip = true        # Strip debug symbols from release binary

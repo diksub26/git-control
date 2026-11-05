@@ -69,6 +69,12 @@ export async function execGit(
     'http.extraHeader=Authorization: Basic ***'
   );
 
+  // Truncate large outputs in command log to prevent excessive heap memory accumulation
+  const truncateForLog = (text: string, maxLen = 12000): string => {
+    if (!text || text.length <= maxLen) return text;
+    return `${text.slice(0, maxLen)}\n... [truncated ${text.length - maxLen} chars to conserve RAM]`;
+  };
+
   const logEntry: CommandLogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     timestamp: new Date().toLocaleTimeString(),
@@ -76,8 +82,8 @@ export async function execGit(
     command: maskedCmd,
     durationMs: Number(result.durationMs || 0),
     exitCode: result.exitCode,
-    stdout: result.stdout,
-    stderr: result.stderr,
+    stdout: truncateForLog(result.stdout),
+    stderr: truncateForLog(result.stderr),
   };
   logListeners.forEach((fn) => fn(logEntry));
 
@@ -708,13 +714,20 @@ export function parseRemoteHostInfo(stdout: string): RemoteHostInfo | null {
   return null;
 }
 
+const commitDetailsCache = new Map<string, { body: string; files: CommitFileChange[] }>();
+const MAX_COMMIT_CACHE = 80;
+
 export async function getCommitChangedFiles(
   repoPath: string,
   commitHash: string
 ): Promise<{ body: string; files: CommitFileChange[] }> {
-  const [bodyRes, numstatRes, statusRes] = await Promise.all([
-    execGit(repoPath, [' show', '-s', '--format=%B', commitHash].map((s) => s.trim())),
-    execGit(repoPath, ['show', '--numstat', '--format=', commitHash]),
+  const cacheKey = `${repoPath}\x01${commitHash}`;
+  const cached = commitDetailsCache.get(cacheKey);
+  if (cached) return cached;
+
+  // Optimized: fetch commit body and numstat in 1 command + name-status in parallel (2 spawns instead of 3)
+  const [showRes, statusRes] = await Promise.all([
+    execGit(repoPath, ['show', '--numstat', '--format=%B', commitHash]),
     execGit(repoPath, ['show', '--name-status', '--format=', commitHash]),
   ]);
 
@@ -727,24 +740,44 @@ export async function getCommitChangedFiles(
     if (p) statusMap.set(p.trim(), st);
   }
 
+  const lines = showRes.stdout.split('\n');
+  const bodyLines: string[] = [];
   const files: CommitFileChange[] = [];
-  for (const line of numstatRes.stdout.split('\n')) {
-    if (!line.trim()) continue;
-    const [addStr, delStr, ...pathParts] = line.split('\t');
-    const filePath = pathParts.join('\t').trim();
-    if (!filePath) continue;
-    files.push({
-      path: filePath,
-      status: statusMap.get(filePath) || 'M',
-      additions: parseInt(addStr, 10) || 0,
-      deletions: parseInt(delStr, 10) || 0,
-    });
+  let inNumstat = false;
+
+  for (const line of lines) {
+    if (!inNumstat) {
+      if (/^(\d+|-)\t(\d+|-)\t/.test(line)) {
+        inNumstat = true;
+      } else {
+        bodyLines.push(line);
+      }
+    }
+    if (inNumstat) {
+      if (!line.trim()) continue;
+      const [addStr, delStr, ...pathParts] = line.split('\t');
+      const filePath = pathParts.join('\t').trim();
+      if (!filePath) continue;
+      files.push({
+        path: filePath,
+        status: statusMap.get(filePath) || 'M',
+        additions: parseInt(addStr, 10) || 0,
+        deletions: parseInt(delStr, 10) || 0,
+      });
+    }
   }
 
-  return {
-    body: bodyRes.stdout.trim(),
+  const result = {
+    body: bodyLines.join('\n').trim(),
     files,
   };
+
+  if (commitDetailsCache.size >= MAX_COMMIT_CACHE) {
+    const firstKey = commitDetailsCache.keys().next().value;
+    if (firstKey) commitDetailsCache.delete(firstKey);
+  }
+  commitDetailsCache.set(cacheKey, result);
+  return result;
 }
 
 export async function getCompareCommitsFiles(
@@ -1300,16 +1333,28 @@ export async function createRemotePullRequest(params: {
   );
 }
 
+let cachedGlobalIdentity: { name: string; email: string; timestamp: number } | null = null;
+const GLOBAL_CONFIG_TTL_MS = 60000;
+
 /**
  * Reads both Global and Local (per-repo) Git user.name & user.email
+ * Caches global config identity to eliminate redundant process spawns on every repo refresh.
  */
 export async function getGitConfigIdentity(
   repoPath?: string
 ): Promise<GitConfigIdentity> {
   const cwd = repoPath?.trim() || '';
+  const now = Date.now();
+  const hasValidGlobalCache =
+    cachedGlobalIdentity && now - cachedGlobalIdentity.timestamp < GLOBAL_CONFIG_TTL_MS;
+
   const [gNameRes, gEmailRes, lNameRes, lEmailRes] = await Promise.all([
-    execGit(cwd, ['config', '--global', '--get', 'user.name']),
-    execGit(cwd, ['config', '--global', '--get', 'user.email']),
+    hasValidGlobalCache
+      ? Promise.resolve({ stdout: cachedGlobalIdentity!.name, stderr: '', exitCode: 0, durationMs: 0, command: '' })
+      : execGit(cwd, ['config', '--global', '--get', 'user.name']),
+    hasValidGlobalCache
+      ? Promise.resolve({ stdout: cachedGlobalIdentity!.email, stderr: '', exitCode: 0, durationMs: 0, command: '' })
+      : execGit(cwd, ['config', '--global', '--get', 'user.email']),
     cwd
       ? execGit(cwd, ['config', '--local', '--get', 'user.name'])
       : Promise.resolve({ stdout: '', stderr: '', exitCode: 1, durationMs: 0, command: '' }),
@@ -1322,6 +1367,10 @@ export async function getGitConfigIdentity(
   const globalEmail = gEmailRes.exitCode === 0 ? gEmailRes.stdout.trim() : '';
   const localName = lNameRes.exitCode === 0 ? lNameRes.stdout.trim() : '';
   const localEmail = lEmailRes.exitCode === 0 ? lEmailRes.stdout.trim() : '';
+
+  if (!hasValidGlobalCache) {
+    cachedGlobalIdentity = { name: globalName, email: globalEmail, timestamp: now };
+  }
 
   return {
     globalName,
@@ -1342,6 +1391,7 @@ export async function setGitConfigIdentity(
   email: string,
   repoPath?: string
 ): Promise<boolean> {
+  cachedGlobalIdentity = null; // Invalidate global cache immediately
   const flag = scope === 'global' ? '--global' : '--local';
   const cwd = repoPath?.trim() || '';
   if (scope === 'local' && !cwd) return false;
