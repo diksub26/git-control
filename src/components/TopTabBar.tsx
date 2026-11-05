@@ -148,7 +148,11 @@ export const TopTabBar: React.FC = () => {
         {/* Left: App Brand & Multi-Repo Tabs */}
         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto no-scrollbar">
           <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-gradient-to-r from-sky-500/20 to-indigo-500/20 border border-sky-400/25 shrink-0">
-            <FolderGit2 className="w-4 h-4 text-sky-400" />
+            <img
+              src="/icon.svg"
+              alt="Git Control"
+              className="w-4 h-4 rounded-sm shrink-0"
+            />
             <span className="font-semibold text-xs tracking-wide text-slate-100">
               GIT CONTROL
             </span>

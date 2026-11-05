@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./public/icon.svg" alt="Git Control Logo" width="112" height="112" />
+
 # ⚡ Git Control
 
 **A Blazing-Fast, Glassmorphic Multi-Platform Git GUI & Interactive Commit Graph**  

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" fill="none">
+  <defs>
+    <!-- Deep Glassmorphic Obsidian-Indigo Background Gradient -->
+    <linearGradient id="bgGrad" x1="112" y1="64" x2="912" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="52%" stop-color="#090D16" />
+      <stop offset="100%" stop-color="#1E1B4B" />
+    </linearGradient>
+
+    <!-- Subtle Top-Left Glass Highlight -->
+    <radialGradient id="glassGlow" cx="26%" cy="18%" r="65%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.22" />
+      <stop offset="55%" stop-color="#6366F1" stop-opacity="0.06" />
+      <stop offset="100%" stop-color="#090D16" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Border Rim Gradient -->
+    <linearGradient id="rimGrad" x1="128" y1="64" x2="896" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.65" />
+      <stop offset="50%" stop-color="#818CF8" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#10B981" stop-opacity="0.55" />
+    </linearGradient>
+
+    <!-- Trunk Lane Gradient (Sky Blue) -->
+    <linearGradient id="trunkGrad" x1="336" y1="180" x2="336" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7DD3FC" />
+      <stop offset="50%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+
+    <!-- Feature Branch Gradient (Indigo / Violet) -->
+    <linearGradient id="branchGrad" x1="336" y1="240" x2="544" y2="780" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="50%" stop-color="#818CF8" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+
+    <!-- Release / Publish Branch Gradient (Emerald) -->
+    <linearGradient id="emeraldGrad" x1="336" y1="360" x2="720" y2="680" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6EE7B7" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+  </defs>
+
+  <!-- Outer Squircle Base -->
+  <rect x="64" y="64" width="896" height="896" rx="216" fill="url(#bgGrad)" />
+  <rect x="64" y="64" width="896" height="896" rx="216" fill="url(#glassGlow)" />
+  <rect x="68" y="68" width="888" height="888" rx="212" stroke="url(#rimGrad)" stroke-width="10" />
+
+  <!-- Subtle Horizontal Commit Row Grid Lines -->
+  <line x1="180" y1="244" x2="844" y2="244" stroke="#F8FAFC" stroke-opacity="0.05" stroke-width="6" stroke-linecap="round" />
+  <line x1="180" y1="396" x2="844" y2="396" stroke="#F8FAFC" stroke-opacity="0.05" stroke-width="6" stroke-linecap="round" />
+  <line x1="180" y1="536" x2="844" y2="536" stroke="#F8FAFC" stroke-opacity="0.05" stroke-width="6" stroke-linecap="round" />
+  <line x1="180" y1="668" x2="844" y2="668" stroke="#F8FAFC" stroke-opacity="0.05" stroke-width="6" stroke-linecap="round" />
+  <line x1="180" y1="784" x2="844" y2="784" stroke="#F8FAFC" stroke-opacity="0.05" stroke-width="6" stroke-linecap="round" />
+
+  <!-- Angular Lane 3: Emerald Release / Publish Branch -->
+  <path
+    d="M 328 668 L 620 668 L 712 576 L 712 396"
+    stroke="url(#emeraldGrad)"
+    stroke-width="38"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Angular Lane 2: Indigo Feature Branch (Fork & Merge) -->
+  <path
+    d="M 328 784 L 444 784 L 528 700 L 528 328 L 444 244 L 328 244"
+    stroke="url(#branchGrad)"
+    stroke-width="40"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Angular Lane 1: Primary Main Trunk -->
+  <path
+    d="M 328 200 L 328 824"
+    stroke="url(#trunkGrad)"
+    stroke-width="44"
+    stroke-linecap="round"
+  />
+
+  <!-- Commit Nodes on Trunk (Sky Blue) -->
+  <circle cx="328" cy="244" r="50" fill="#090D16" stroke="#38BDF8" stroke-width="28" />
+  <circle cx="328" cy="536" r="44" fill="#090D16" stroke="#38BDF8" stroke-width="26" />
+  <circle cx="328" cy="784" r="48" fill="#090D16" stroke="#38BDF8" stroke-width="28" />
+
+  <!-- Commit Node on Feature Lane (Indigo) -->
+  <circle cx="528" cy="536" r="48" fill="#090D16" stroke="#818CF8" stroke-width="28" />
+
+  <!-- Commit Node on Release Lane (Emerald) + HEAD Halo -->
+  <circle cx="712" cy="396" r="76" fill="#10B981" fill-opacity="0.18" />
+  <circle cx="712" cy="396" r="50" fill="#090D16" stroke="#34D399" stroke-width="28" />
+</svg>

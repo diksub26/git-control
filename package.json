@@ -3,7 +3,18 @@
   "private": true,
   "version": "0.1.0",
   "license": "MIT",
-  "description": "Multi-platform Git GUI with vscode-git-graph visualization and Native OS Glassmorphism",
+  "author": "Diki & Git Control Contributors",
+  "description": "Blazing-fast, glassmorphic desktop Git GUI & interactive angular commit graph built with Tauri v2, React 18, and Monaco Editor",
+  "keywords": [
+    "git",
+    "git-client",
+    "git-gui",
+    "git-graph",
+    "tauri",
+    "rust",
+    "react",
+    "monaco-editor"
+  ],
   "type": "module",
   "packageManager": "pnpm@9.5.0",
   "engines": {

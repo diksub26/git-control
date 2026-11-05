@@ -34,7 +34,16 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Git Control Contributors",
+    "category": "DeveloperTool",
+    "shortDescription": "Blazing-fast, glassmorphic desktop Git GUI & interactive commit graph",
+    "longDescription": "Git Control is a modern, cross-platform desktop Git GUI and interactive angular commit graph built with Tauri v2 (Rust), React 18, TypeScript, and Monaco Editor.",
+    "copyright": "Copyright © 2026 Diki & Git Control Contributors. Licensed under MIT.",
     "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
       "icons/icon.ico",
       "icons/icon.png"
     ]
