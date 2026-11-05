@@ -199,3 +199,38 @@ export interface GitConfigIdentity {
   effectiveName: string;
   effectiveEmail: string;
 }
+
+export interface GitWorkflowStep {
+  id: string;
+  command: string; // e.g. "git fetch -p", "git pull origin main", "git push -f"
+  continueOnError?: boolean;
+}
+
+export interface GitWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  scope: 'global' | 'repo';
+  repoPath?: string;
+  steps: GitWorkflowStep[];
+  confirmBeforeRun?: boolean;
+  createdAt: number;
+}
+
+export interface WorkflowStepResult {
+  stepId: string;
+  command: string;
+  status: 'pending' | 'running' | 'success' | 'error' | 'skipped';
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+  exitCode: number | null;
+}
+
+export interface ActiveWorkflowRun {
+  workflowId: string;
+  workflowName: string;
+  isRunning: boolean;
+  currentStepIndex: number;
+  stepResults: WorkflowStepResult[];
+}

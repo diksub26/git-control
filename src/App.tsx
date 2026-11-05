@@ -11,6 +11,7 @@ import { GitAccountModal } from './components/GitAccountModal';
 import { PublishRepoModal } from './components/PublishRepoModal';
 import { CreatePRModal } from './components/CreatePRModal';
 import { IdeIntegrationModal } from './components/IdeIntegrationModal';
+import { GitWorkflowModal } from './components/GitWorkflowModal';
 import { useGitStore } from './store/useGitStore';
 import { startWatchingRepository } from './services/gitService';
 
@@ -106,6 +107,9 @@ export const App: React.FC = () => {
 
       {/* Manage IDE & Editor Integration Modal */}
       <IdeIntegrationModal />
+
+      {/* Git Workflow Automation & Macro Runner Modal */}
+      <GitWorkflowModal />
 
       {/* Floating Active Git/Remote Operation Loading Pill */}
       {runningOpLabel && (
