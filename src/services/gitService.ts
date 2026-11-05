@@ -619,9 +619,9 @@ export function parseRemoteHostInfo(stdout: string): RemoteHostInfo | null {
     const remoteName = parts[0];
     const rawUrl = parts[1];
 
-    // Match SSH or HTTPS GitHub/GitLab/Bitbucket URLs
+    // Match SSH or HTTPS GitHub/GitLab/Bitbucket URLs (including optional username/token prefix)
     const match = rawUrl.match(
-      /(?:git@|https?:\/\/)([\w.-]+)[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i
+      /(?:git@|https?:\/\/(?:[^@/\s]+@)?)([\w.-]+)[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i
     );
     if (match) {
       const host = match[1].toLowerCase();
@@ -955,27 +955,62 @@ export function resolveConflictBlocks(
 }
 
 /**
- * Fetches Pull Requests & Issues directly from GitHub or GitLab REST API
+ * Error thrown when the GitHub/GitLab REST API rejects a request
+ * (e.g. 401 invalid token, 403 forbidden/rate-limited, 404 private repo without access).
+ */
+export class RemoteApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'RemoteApiError';
+    this.status = status;
+  }
+}
+
+async function readApiErrorMessage(res: Response): Promise<string> {
+  try {
+    const data = await res.json();
+    return data?.message || data?.error || res.statusText || `HTTP ${res.status}`;
+  } catch {
+    return res.statusText || `HTTP ${res.status}`;
+  }
+}
+
+/**
+ * Fetches Pull Requests & Issues directly from GitHub or GitLab REST API.
+ * Uses exactly the given token (or anonymous access when omitted) and throws
+ * `RemoteApiError` when the API rejects the request. Bypasses browser HTTP cache.
  */
 export async function fetchRemotePullRequestsAndIssues(
   remoteInfo: RemoteHostInfo,
   token?: string
 ): Promise<{ pullRequests: RemotePullRequest[]; issues: RemoteIssue[] }> {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-  };
-  if (token?.trim()) {
-    headers.Authorization = `Bearer ${token.trim()}`;
-  }
+  const cleanToken = token?.trim() || '';
+  const cacheBuster = Date.now();
 
   if (remoteInfo.provider === 'github') {
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github+json',
+    };
+    if (cleanToken) headers.Authorization = `Bearer ${cleanToken}`;
+
     const base = `https://api.github.com/repos/${remoteInfo.owner}/${remoteInfo.repo}`;
     const [prRes, issueRes] = await Promise.all([
-      fetch(`${base}/pulls?state=all&per_page=20`, { headers }),
-      fetch(`${base}/issues?state=open&per_page=20`, { headers }),
+      fetch(`${base}/pulls?state=all&per_page=30&_=${cacheBuster}`, {
+        headers,
+        cache: 'no-store',
+      }),
+      fetch(`${base}/issues?state=open&per_page=30&_=${cacheBuster}`, {
+        headers,
+        cache: 'no-store',
+      }),
     ]);
 
-    const prData = prRes.ok ? await prRes.json() : [];
+    if (!prRes.ok) {
+      throw new RemoteApiError(prRes.status, await readApiErrorMessage(prRes));
+    }
+
+    const prData = await prRes.json();
     const issueData = issueRes.ok ? await issueRes.json() : [];
 
     const pullRequests: RemotePullRequest[] = Array.isArray(prData)
@@ -1015,14 +1050,29 @@ export async function fetchRemotePullRequestsAndIssues(
   }
 
   if (remoteInfo.provider === 'gitlab') {
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+    };
+    if (cleanToken) headers.Authorization = `Bearer ${cleanToken}`;
+
     const projectPath = encodeURIComponent(`${remoteInfo.owner}/${remoteInfo.repo}`);
     const base = `https://gitlab.com/api/v4/projects/${projectPath}`;
     const [mrRes, issueRes] = await Promise.all([
-      fetch(`${base}/merge_requests?per_page=20`, { headers }),
-      fetch(`${base}/issues?state=opened&per_page=20`, { headers }),
+      fetch(`${base}/merge_requests?per_page=30&_=${cacheBuster}`, {
+        headers,
+        cache: 'no-store',
+      }),
+      fetch(`${base}/issues?state=opened&per_page=30&_=${cacheBuster}`, {
+        headers,
+        cache: 'no-store',
+      }),
     ]);
 
-    const mrData = mrRes.ok ? await mrRes.json() : [];
+    if (!mrRes.ok) {
+      throw new RemoteApiError(mrRes.status, await readApiErrorMessage(mrRes));
+    }
+
+    const mrData = await mrRes.json();
     const issueData = issueRes.ok ? await issueRes.json() : [];
 
     const pullRequests: RemotePullRequest[] = Array.isArray(mrData)
@@ -1030,7 +1080,12 @@ export async function fetchRemotePullRequestsAndIssues(
           id: mr.id,
           number: mr.iid,
           title: mr.title,
-          state: mr.state === 'merged' ? 'merged' : mr.state === 'opened' ? 'open' : 'closed',
+          state:
+            mr.state === 'merged'
+              ? 'merged'
+              : mr.state === 'opened'
+              ? 'open'
+              : 'closed',
           author: mr.author?.username || 'user',
           authorAvatar: mr.author?.avatar_url,
           sourceBranch: mr.source_branch || '',

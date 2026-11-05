@@ -691,10 +691,10 @@ export const LeftSidebar: React.FC = () => {
                 </button>
               )}
               <button
-                onClick={() => loadRemotePRsAndIssues()}
+                onClick={() => loadRemotePRsAndIssues({ manual: true })}
                 disabled={activeRemoteOp === 'pr-sync'}
                 className="p-1 text-slate-400 hover:text-sky-300 disabled:opacity-50"
-                title="Refresh PRs & Issues (Auto-authenticated via Git Credentials / Account)"
+                title="Refresh PRs & Issues (uses only the account linked to this repository in Account Manager)"
               >
                 <RefreshCw
                   className={`w-3 h-3 ${

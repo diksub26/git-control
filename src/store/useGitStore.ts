@@ -35,6 +35,7 @@ import {
   loadRepositoryState,
   onGitCommandLog,
   openInExternalEditor,
+  RemoteApiError,
   resolveGitCredentialToken,
   setGitConfigIdentity,
 } from '../services/gitService';
@@ -228,7 +229,7 @@ interface GitStoreState {
   unstageAll: () => Promise<void>;
   discardFile: (filePath: string, isUntracked?: boolean) => Promise<void>;
   commitChanges: (message: string, amend?: boolean, signoff?: boolean) => Promise<boolean>;
-  loadRemotePRsAndIssues: () => Promise<void>;
+  loadRemotePRsAndIssues: (opts?: { manual?: boolean }) => Promise<void>;
 }
 
 const SESSION_TABS_KEY = 'git-control-session-tabs';
@@ -337,6 +338,9 @@ export function parseGitCommandArgs(
   }
   return tokens;
 }
+
+// Last PR/Issue auth error shown, so background auto-refreshes do not spam the same toast
+let lastPrAuthErrorKey = '';
 
 function loadInitialCustomIdes(): IdeConfig[] {
   try {
@@ -2045,51 +2049,97 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       return await get().runGitOp('Commit', args);
     },
 
-    loadRemotePRsAndIssues: async () => {
-      const { remoteInfo, githubToken, accounts, gitIdentity, tabs, activeTabId } =
-        get();
+    loadRemotePRsAndIssues: async (opts) => {
+      const { remoteInfo, accounts, gitIdentity, tabs, activeTabId } = get();
       if (!remoteInfo || remoteInfo.provider === 'unknown') return;
+      const activeTab = tabs.find((t) => t.id === activeTabId);
+      const isManual = Boolean(opts?.manual);
+
+      // STRICT: only the account linked to this repository is used.
+      // Linked = account username equals the remote owner, otherwise the account whose
+      // email matches the repo's effective git user.email (same provider).
+      // No fallback to other saved accounts, cached tokens, or system credentials.
+      const linkedAccount =
+        accounts.find(
+          (a) =>
+            a.provider === remoteInfo.provider &&
+            a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
+        ) ||
+        accounts.find(
+          (a) =>
+            a.provider === remoteInfo.provider &&
+            Boolean(gitIdentity.effectiveEmail) &&
+            a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
+        );
+      const linkedToken = linkedAccount?.token?.trim() || '';
+      const accountLabel = linkedAccount
+        ? linkedAccount.username || linkedAccount.email
+        : '';
+
+      const notify = (key: string, message: string) => {
+        const fullKey = `${activeTab?.path || ''}|${key}`;
+        if (isManual || fullKey !== lastPrAuthErrorKey) {
+          lastPrAuthErrorKey = fullKey;
+          get().showToast(message, 'error');
+        }
+      };
+
       set((s) => ({
         activeRemoteOp: s.activeRemoteOp || 'pr-sync',
       }));
-      try {
-        const activeTab = tabs.find((t) => t.id === activeTabId);
-        const matchedAccount =
-          accounts.find(
-            (a) =>
-              a.token &&
-              a.username.toLowerCase() === remoteInfo.owner.toLowerCase()
-          ) ||
-          accounts.find(
-            (a) =>
-              a.token &&
-              a.provider === remoteInfo.provider &&
-              a.email.toLowerCase() === gitIdentity.effectiveEmail.toLowerCase()
-          ) ||
-          accounts.find((a) => a.token && a.provider === remoteInfo.provider) ||
-          accounts.find((a) => Boolean(a.token));
 
-        let tokenToUse = matchedAccount?.token || githubToken;
-        if (!tokenToUse) {
-          const host =
-            remoteInfo.provider === 'gitlab' ? 'gitlab.com' : 'github.com';
-          const sysToken = await resolveGitCredentialToken(
-            activeTab?.path || '',
-            host
-          );
-          if (sysToken) {
-            tokenToUse = sysToken;
-            set({ githubToken: sysToken });
+      try {
+        let result: { pullRequests: RemotePullRequest[]; issues: RemoteIssue[] } | null =
+          null;
+
+        if (linkedToken) {
+          try {
+            result = await fetchRemotePullRequestsAndIssues(remoteInfo, linkedToken);
+          } catch (err: any) {
+            const status = err instanceof RemoteApiError ? err.status : 0;
+            notify(
+              `token:${accountLabel}:${status}`,
+              status
+                ? `Token akun ${accountLabel} ditolak (${status}${
+                    err?.message ? `: ${err.message}` : ''
+                  }), perbarui di Account Manager`
+                : `Gagal memuat PRs & Issues dengan akun ${accountLabel}: ${
+                    err?.message || err
+                  }`
+            );
           }
         }
 
-        const { pullRequests, issues } = await fetchRemotePullRequestsAndIssues(
-          remoteInfo,
-          tokenToUse
-        );
-        set({ pullRequests, issues });
-      } catch {
-        // Ignore network errors silently
+        // Anonymous access (no identity attached) only for public repositories
+        if (!result) {
+          try {
+            result = await fetchRemotePullRequestsAndIssues(remoteInfo);
+            if (!linkedToken) lastPrAuthErrorKey = '';
+          } catch (err: any) {
+            if (!linkedToken) {
+              const status = err instanceof RemoteApiError ? err.status : 0;
+              notify(
+                `noaccount:${status}`,
+                linkedAccount
+                  ? `Akun ${accountLabel} belum punya token untuk ${remoteInfo.owner}/${remoteInfo.repo}${
+                      status ? ` (${status})` : ''
+                    }, tambahkan token di Account Manager`
+                  : `Tidak ada akun yang terhubung ke ${remoteInfo.owner}/${remoteInfo.repo}${
+                      status ? ` (${status})` : ''
+                    }, tambahkan akun di Account Manager`
+              );
+            }
+          }
+        } else {
+          lastPrAuthErrorKey = '';
+        }
+
+        // Ignore stale responses if the user switched repository tabs meanwhile
+        if (get().activeTabId !== activeTabId) return;
+        set({
+          pullRequests: result?.pullRequests || [],
+          issues: result?.issues || [],
+        });
       } finally {
         set((s) => ({
           activeRemoteOp: s.activeRemoteOp === 'pr-sync' ? null : s.activeRemoteOp,
