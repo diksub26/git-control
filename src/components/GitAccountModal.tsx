@@ -19,25 +19,28 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { GitAccount, GitAccountProvider } from '../types/git';
 import { verifyProviderToken } from '../services/gitService';
 import { getAuthorAvatarUrl } from '../utils/avatar';
 
 export const GitAccountModal: React.FC = () => {
   const {
-    isAccountModalOpen,
-    setAccountModalOpen,
-    accounts,
-    gitIdentity,
-    tabs,
-    activeTabId,
-    saveGitAccount,
-    applyAccountToGitConfig,
-    clearRepoLocalIdentity,
-    removeGitAccount,
-    requestConfirm,
-    showToast,
-  } = useGitStore();
+  isAccountModalOpen,
+  setAccountModalOpen,
+  accounts,
+  gitIdentity,
+  tabs,
+  activeTabId,
+  saveGitAccount,
+  applyAccountToGitConfig,
+  clearRepoLocalIdentity,
+  removeGitAccount,
+  requestConfirm,
+  showToast,
+} = useGitStore(
+  useShallow((s) => ({ isAccountModalOpen: s.isAccountModalOpen, setAccountModalOpen: s.setAccountModalOpen, accounts: s.accounts, gitIdentity: s.gitIdentity, tabs: s.tabs, activeTabId: s.activeTabId, saveGitAccount: s.saveGitAccount, applyAccountToGitConfig: s.applyAccountToGitConfig, clearRepoLocalIdentity: s.clearRepoLocalIdentity, removeGitAccount: s.removeGitAccount, requestConfirm: s.requestConfirm, showToast: s.showToast }))
+);
 
   const [activeTab, setActiveTab] = useState<'list' | 'login'>('list');
   const [searchQuery, setSearchQuery] = useState('');
@@ -199,7 +202,7 @@ export const GitAccountModal: React.FC = () => {
   return createPortal(
     <div
       onClick={() => setAccountModalOpen(false)}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-6 select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}

@@ -8,6 +8,7 @@ import { GitGraphView } from './components/GitGraphView';
 import { RightContextPanel } from './components/RightContextPanel';
 import { CommandLogDrawer } from './components/CommandLogDrawer';
 import { useGitStore } from './store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { startWatchingRepository } from './services/gitService';
 
 // Lazy-loaded modal components for fast startup & reduced RAM usage
@@ -44,22 +45,24 @@ const GitWorkflowModal = React.lazy(() =>
 
 export const App: React.FC = () => {
   const {
-    initStore,
-    refreshActiveRepo,
-    setRepoModalOpen,
-    tabs,
-    activeTabId,
-    runningOpLabel,
-    toast,
-    confirmDialog,
-    closeConfirm,
-    isAccountModalOpen,
-    isPublishModalOpen,
-    isCreatePRModalOpen,
-    isWorkflowModalOpen,
-    isIdeModalOpen,
-    activeDiffRequest,
-  } = useGitStore();
+  initStore,
+  refreshActiveRepo,
+  setRepoModalOpen,
+  tabs,
+  activeTabId,
+  runningOpLabel,
+  toast,
+  confirmDialog,
+  closeConfirm,
+  isAccountModalOpen,
+  isPublishModalOpen,
+  isCreatePRModalOpen,
+  isWorkflowModalOpen,
+  isIdeModalOpen,
+  activeDiffRequest,
+} = useGitStore(
+  useShallow((s) => ({ initStore: s.initStore, refreshActiveRepo: s.refreshActiveRepo, setRepoModalOpen: s.setRepoModalOpen, tabs: s.tabs, activeTabId: s.activeTabId, runningOpLabel: s.runningOpLabel, toast: s.toast, confirmDialog: s.confirmDialog, closeConfirm: s.closeConfirm, isAccountModalOpen: s.isAccountModalOpen, isPublishModalOpen: s.isPublishModalOpen, isCreatePRModalOpen: s.isCreatePRModalOpen, isWorkflowModalOpen: s.isWorkflowModalOpen, isIdeModalOpen: s.isIdeModalOpen, activeDiffRequest: s.activeDiffRequest }))
+);
   const [isConfirmRunning, setIsConfirmRunning] = useState(false);
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -80,13 +83,18 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (!activeTab?.path) return;
+    let cancelled = false;
     let stopWatcher: (() => void) | null = null;
     startWatchingRepository(activeTab.path, () => {
-      refreshActiveRepo();
+      if (!cancelled) refreshActiveRepo();
     }).then((cleanup) => {
-      stopWatcher = cleanup;
+      // If the effect was cleaned up before the async listener registered,
+      // release it immediately instead of leaking it.
+      if (cancelled) cleanup();
+      else stopWatcher = cleanup;
     });
     return () => {
+      cancelled = true;
       if (stopWatcher) stopWatcher();
     };
   }, [activeTab?.path, refreshActiveRepo]);
@@ -149,7 +157,7 @@ export const App: React.FC = () => {
 
       {/* Floating Active Git/Remote Operation Loading Pill */}
       {runningOpLabel && (
-        <div className="fixed bottom-5 left-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/95 border border-sky-400/40 backdrop-blur-xl shadow-2xl text-xs font-medium text-sky-200">
+        <div className="fixed bottom-5 left-5 z-50 flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-900/95 border border-sky-400/40 shadow-2xl text-xs font-medium text-sky-200">
           <Loader2 className="w-4 h-4 text-sky-400 animate-spin shrink-0" />
           <span>{runningOpLabel}...</span>
         </div>
@@ -158,7 +166,7 @@ export const App: React.FC = () => {
       {/* Floating Toast Notification */}
       {toast && (
         <div
-          className={`fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl border backdrop-blur-xl shadow-2xl text-xs font-medium transition-all ${
+          className={`fixed bottom-5 right-5 z-50 px-4 py-2.5 rounded-xl border shadow-2xl text-xs font-medium transition-all ${
             toast.type === 'error'
               ? 'bg-rose-950/90 border-rose-500/40 text-rose-200'
               : toast.type === 'success'
@@ -175,7 +183,7 @@ export const App: React.FC = () => {
         createPortal(
           <div
             onClick={() => !isConfirmRunning && closeConfirm()}
-            className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 select-none"
+            className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/80 p-4 select-none"
           >
             <div
               onClick={(e) => e.stopPropagation()}

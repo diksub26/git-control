@@ -14,34 +14,37 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { openExternalUrl } from '../services/gitService';
 import { getAuthorAvatarUrl } from '../utils/avatar';
 
 export const RightContextPanel: React.FC = () => {
   const {
-    commits,
-    workingFiles,
-    selectedCommitHash,
-    compareCommitHash,
-    selectedCommitBody,
-    selectedCommitFiles,
-    remoteInfo,
-    currentBranch,
-    headHash,
-    isHeadDetached,
-    activeRemoteOp,
-    runningOpLabel,
-    selectCommit,
-    stageFile,
-    unstageFile,
-    stageAll,
-    unstageAll,
-    discardFile,
-    commitChanges,
-    runGitOp,
-    openFileDiff,
-    showToast,
-  } = useGitStore();
+  commits,
+  workingFiles,
+  selectedCommitHash,
+  compareCommitHash,
+  selectedCommitBody,
+  selectedCommitFiles,
+  remoteInfo,
+  currentBranch,
+  headHash,
+  isHeadDetached,
+  activeRemoteOp,
+  runningOpLabel,
+  selectCommit,
+  stageFile,
+  unstageFile,
+  stageAll,
+  unstageAll,
+  discardFile,
+  commitChanges,
+  runGitOp,
+  openFileDiff,
+  showToast,
+} = useGitStore(
+  useShallow((s) => ({ commits: s.commits, workingFiles: s.workingFiles, selectedCommitHash: s.selectedCommitHash, compareCommitHash: s.compareCommitHash, selectedCommitBody: s.selectedCommitBody, selectedCommitFiles: s.selectedCommitFiles, remoteInfo: s.remoteInfo, currentBranch: s.currentBranch, headHash: s.headHash, isHeadDetached: s.isHeadDetached, activeRemoteOp: s.activeRemoteOp, runningOpLabel: s.runningOpLabel, selectCommit: s.selectCommit, stageFile: s.stageFile, unstageFile: s.unstageFile, stageAll: s.stageAll, unstageAll: s.unstageAll, discardFile: s.discardFile, commitChanges: s.commitChanges, runGitOp: s.runGitOp, openFileDiff: s.openFileDiff, showToast: s.showToast }))
+);
 
   const [commitMessage, setCommitMessage] = useState('');
   const [amend, setAmend] = useState(false);
@@ -76,7 +79,7 @@ export const RightContextPanel: React.FC = () => {
   // 1. Working Copy & Staging Mode
   if (selectedCommitHash === 'UNCOMMITTED' || !selectedCommit) {
     return (
-      <aside className="w-96 shrink-0 h-full bg-slate-950/50 backdrop-blur-xl border-l border-white/10 flex flex-col select-none">
+      <aside className="w-96 shrink-0 h-full bg-slate-950/50 border-l border-white/10 flex flex-col select-none">
         <div className="h-11 px-4 flex items-center justify-between border-b border-white/10">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400" />
@@ -321,7 +324,7 @@ export const RightContextPanel: React.FC = () => {
   // 2. Compare 2 Commits Mode (Ctrl/Cmd + Click)
   if (compareCommit) {
     return (
-      <aside className="w-96 shrink-0 h-full bg-slate-950/50 backdrop-blur-xl border-l border-white/10 flex flex-col select-none">
+      <aside className="w-96 shrink-0 h-full bg-slate-950/50 border-l border-white/10 flex flex-col select-none">
         <div className="h-11 px-4 flex items-center justify-between border-b border-white/10">
           <div className="flex items-center gap-2">
             <ArrowLeftRight className="w-4 h-4 text-purple-400" />
@@ -399,7 +402,7 @@ export const RightContextPanel: React.FC = () => {
 
   // 3. Single Commit Details Mode (vscode-git-graph style)
   return (
-    <aside className="w-96 shrink-0 h-full bg-slate-950/50 backdrop-blur-xl border-l border-white/10 flex flex-col select-none">
+    <aside className="w-96 shrink-0 h-full bg-slate-950/50 border-l border-white/10 flex flex-col select-none">
       <div className="h-11 px-4 flex items-center justify-between border-b border-white/10">
         <div className="flex items-center gap-2">
           <FileCode2 className="w-4 h-4 text-sky-400" />

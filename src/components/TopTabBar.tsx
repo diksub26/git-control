@@ -16,32 +16,35 @@ import {
   Check,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { pickRepositoryFolder } from '../services/gitService';
 import { getAuthorAvatarUrl } from '../utils/avatar';
 
 export const TopTabBar: React.FC = () => {
   const {
-    tabs,
-    savedRepos,
-    activeTabId,
-    isRepoModalOpen,
-    accounts,
-    gitIdentity,
-    isLoading,
-    activeRemoteOp,
-    runningOpLabel,
-    setRepoModalOpen,
-    setAccountModalOpen,
-    setActiveTab,
-    closeRepoTab,
-    closeOtherTabs,
-    closeTabsToTheRight,
-    openRepoTab,
-    removeSavedRepo,
-    cloneRepository,
-    requestConfirm,
-    showToast,
-  } = useGitStore();
+  tabs,
+  savedRepos,
+  activeTabId,
+  isRepoModalOpen,
+  accounts,
+  gitIdentity,
+  isLoading,
+  activeRemoteOp,
+  runningOpLabel,
+  setRepoModalOpen,
+  setAccountModalOpen,
+  setActiveTab,
+  closeRepoTab,
+  closeOtherTabs,
+  closeTabsToTheRight,
+  openRepoTab,
+  removeSavedRepo,
+  cloneRepository,
+  requestConfirm,
+  showToast,
+} = useGitStore(
+  useShallow((s) => ({ tabs: s.tabs, savedRepos: s.savedRepos, activeTabId: s.activeTabId, isRepoModalOpen: s.isRepoModalOpen, accounts: s.accounts, gitIdentity: s.gitIdentity, isLoading: s.isLoading, activeRemoteOp: s.activeRemoteOp, runningOpLabel: s.runningOpLabel, setRepoModalOpen: s.setRepoModalOpen, setAccountModalOpen: s.setAccountModalOpen, setActiveTab: s.setActiveTab, closeRepoTab: s.closeRepoTab, closeOtherTabs: s.closeOtherTabs, closeTabsToTheRight: s.closeTabsToTheRight, openRepoTab: s.openRepoTab, removeSavedRepo: s.removeSavedRepo, cloneRepository: s.cloneRepository, requestConfirm: s.requestConfirm, showToast: s.showToast }))
+);
 
   const [repoModalTab, setRepoModalTab] = useState<'open' | 'clone'>('open');
   const [customPath, setCustomPath] = useState('');
@@ -123,7 +126,7 @@ export const TopTabBar: React.FC = () => {
 
   return (
     <>
-      <header className="relative h-10 px-3 bg-slate-950/70 backdrop-blur-xl border-b border-white/10 flex items-center gap-2 select-none z-20 shrink-0">
+      <header className="relative h-10 px-3 bg-slate-950/70 border-b border-white/10 flex items-center gap-2 select-none z-20 shrink-0">
         {(isLoading || activeRemoteOp || runningOpLabel) && (
           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-sky-500 via-indigo-400 to-emerald-400 animate-pulse z-30" />
         )}
@@ -374,7 +377,7 @@ export const TopTabBar: React.FC = () => {
 
       {/* Modal: Open, Switch, or Clone Git Repository (Expanded Size) */}
       {isRepoModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
           <div className="w-full max-w-4xl min-h-[540px] max-h-[86vh] rounded-2xl bg-slate-900/95 border border-white/15 shadow-2xl flex flex-col overflow-hidden">
             {/* Modal Header */}
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between bg-slate-950/60 shrink-0">
@@ -727,7 +730,7 @@ export const TopTabBar: React.FC = () => {
                 left: Math.min(tabContextMenu.x, window.innerWidth - 240),
               }}
               onClick={(e) => e.stopPropagation()}
-              className="fixed w-56 py-1.5 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl backdrop-blur-xl text-xs text-slate-200 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
+              className="fixed w-56 py-1.5 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl text-xs text-slate-200 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
             >
               {/* Tab Header / Info */}
               <div className="px-3 py-1.5 border-b border-white/10 flex items-center justify-between gap-2 text-slate-400">

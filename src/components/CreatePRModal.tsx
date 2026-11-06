@@ -10,18 +10,21 @@ import {
   X,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { openExternalUrl } from '../services/gitService';
 
 export const CreatePRModal: React.FC = () => {
   const {
-    isCreatePRModalOpen,
-    setCreatePRModalOpen,
-    remoteInfo,
-    currentBranch,
-    refs,
-    commits,
-    createPullRequest,
-  } = useGitStore();
+  isCreatePRModalOpen,
+  setCreatePRModalOpen,
+  remoteInfo,
+  currentBranch,
+  refs,
+  commits,
+  createPullRequest,
+} = useGitStore(
+  useShallow((s) => ({ isCreatePRModalOpen: s.isCreatePRModalOpen, setCreatePRModalOpen: s.setCreatePRModalOpen, remoteInfo: s.remoteInfo, currentBranch: s.currentBranch, refs: s.refs, commits: s.commits, createPullRequest: s.createPullRequest }))
+);
 
   const [headBranch, setHeadBranch] = useState('');
   const [baseBranch, setBaseBranch] = useState('main');
@@ -101,7 +104,7 @@ export const CreatePRModal: React.FC = () => {
   return createPortal(
     <div
       onClick={() => !isSubmitting && setCreatePRModalOpen(false)}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-6 select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}

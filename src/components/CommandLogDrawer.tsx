@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
 import { TerminalSquare, Trash2, X, Play } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 
 export const CommandLogDrawer: React.FC = () => {
   const {
-    commandLogs,
-    isConsoleOpen,
-    setConsoleOpen,
-    clearCommandLogs,
-    runGitOp,
-  } = useGitStore();
+  commandLogs,
+  isConsoleOpen,
+  setConsoleOpen,
+  clearCommandLogs,
+  runGitOp,
+} = useGitStore(
+  useShallow((s) => ({ commandLogs: s.commandLogs, isConsoleOpen: s.isConsoleOpen, setConsoleOpen: s.setConsoleOpen, clearCommandLogs: s.clearCommandLogs, runGitOp: s.runGitOp }))
+);
 
   const [customCmd, setCustomCmd] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -26,7 +29,7 @@ export const CommandLogDrawer: React.FC = () => {
   };
 
   return (
-    <div className="h-56 shrink-0 bg-slate-950/85 backdrop-blur-2xl border-t border-white/15 flex flex-col z-20 select-none">
+    <div className="h-56 shrink-0 bg-slate-950/85 border-t border-white/15 flex flex-col z-20 select-none">
       {/* Header + Quick Command Runner */}
       <div className="h-9 px-3 flex items-center justify-between border-b border-white/10 bg-slate-900/60">
         <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">

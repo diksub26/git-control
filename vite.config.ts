@@ -108,9 +108,8 @@ export default defineConfig({
       output: {
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined;
-          if (id.includes('@monaco-editor') || id.includes('monaco-editor')) {
-            return 'vendor-monaco';
-          }
+          // Monaco is intentionally NOT forced into a manual chunk: letting Rollup keep it
+          // inside the lazy DiffAndConflictModal graph prevents it from being preloaded at startup.
           if (id.includes('lucide-react')) return 'vendor-icons';
           if (
             id.includes('/react/') ||

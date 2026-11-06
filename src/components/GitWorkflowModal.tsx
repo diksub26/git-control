@@ -20,6 +20,7 @@ import {
   FolderGit2,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { GitWorkflow, GitWorkflowStep } from '../types/git';
 
 const QUICK_COMMAND_PRESETS = [
@@ -44,19 +45,21 @@ export function isWorkflowDestructive(wf: GitWorkflow): boolean {
 
 export const GitWorkflowModal: React.FC = () => {
   const {
-    isWorkflowModalOpen,
-    setWorkflowModalOpen,
-    workflows,
-    activeWorkflowRun,
-    clearWorkflowRun,
-    saveWorkflow,
-    deleteWorkflow,
-    runWorkflow,
-    tabs,
-    activeTabId,
-    currentBranch,
-    requestConfirm,
-  } = useGitStore();
+  isWorkflowModalOpen,
+  setWorkflowModalOpen,
+  workflows,
+  activeWorkflowRun,
+  clearWorkflowRun,
+  saveWorkflow,
+  deleteWorkflow,
+  runWorkflow,
+  tabs,
+  activeTabId,
+  currentBranch,
+  requestConfirm,
+} = useGitStore(
+  useShallow((s) => ({ isWorkflowModalOpen: s.isWorkflowModalOpen, setWorkflowModalOpen: s.setWorkflowModalOpen, workflows: s.workflows, activeWorkflowRun: s.activeWorkflowRun, clearWorkflowRun: s.clearWorkflowRun, saveWorkflow: s.saveWorkflow, deleteWorkflow: s.deleteWorkflow, runWorkflow: s.runWorkflow, tabs: s.tabs, activeTabId: s.activeTabId, currentBranch: s.currentBranch, requestConfirm: s.requestConfirm }))
+);
 
   const [modalTab, setModalTab] = useState<'list' | 'editor'>('list');
   const [searchQuery, setSearchQuery] = useState('');
@@ -228,7 +231,7 @@ export const GitWorkflowModal: React.FC = () => {
   return createPortal(
     <div
       onClick={() => !activeWorkflowRun?.isRunning && setWorkflowModalOpen(false)}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-6 select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}

@@ -25,34 +25,37 @@ import {
   Radio,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { openExternalUrl } from '../services/gitService';
 import { RemoteIssue, RemotePullRequest } from '../types/git';
 
 export const LeftSidebar: React.FC = () => {
   const {
-    refs,
-    workingFiles,
-    worktrees,
-    submodules,
-    remoteInfo,
-    pullRequests,
-    issues,
-    prFilter,
-    setPrFilter,
-    tabs,
-    activeTabId,
-    currentBranch,
-    headHash,
-    isHeadDetached,
-    activeRemoteOp,
-    selectedCommitHash,
-    selectCommit,
-    runGitOp,
-    loadRemotePRsAndIssues,
-    setPublishModalOpen,
-    setCreatePRModalOpen,
-    requestConfirm,
-  } = useGitStore();
+  refs,
+  workingFiles,
+  worktrees,
+  submodules,
+  remoteInfo,
+  pullRequests,
+  issues,
+  prFilter,
+  setPrFilter,
+  tabs,
+  activeTabId,
+  currentBranch,
+  headHash,
+  isHeadDetached,
+  activeRemoteOp,
+  selectedCommitHash,
+  selectCommit,
+  runGitOp,
+  loadRemotePRsAndIssues,
+  setPublishModalOpen,
+  setCreatePRModalOpen,
+  requestConfirm,
+} = useGitStore(
+  useShallow((s) => ({ refs: s.refs, workingFiles: s.workingFiles, worktrees: s.worktrees, submodules: s.submodules, remoteInfo: s.remoteInfo, pullRequests: s.pullRequests, issues: s.issues, prFilter: s.prFilter, setPrFilter: s.setPrFilter, tabs: s.tabs, activeTabId: s.activeTabId, currentBranch: s.currentBranch, headHash: s.headHash, isHeadDetached: s.isHeadDetached, activeRemoteOp: s.activeRemoteOp, selectedCommitHash: s.selectedCommitHash, selectCommit: s.selectCommit, runGitOp: s.runGitOp, loadRemotePRsAndIssues: s.loadRemotePRsAndIssues, setPublishModalOpen: s.setPublishModalOpen, setCreatePRModalOpen: s.setCreatePRModalOpen, requestConfirm: s.requestConfirm }))
+);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -398,7 +401,7 @@ export const LeftSidebar: React.FC = () => {
         style={{ width: `${sidebarWidth}px` }}
         className="relative shrink-0 h-full flex select-none"
       >
-        <aside className="w-full flex-1 h-full bg-slate-950/45 backdrop-blur-xl border-r border-white/10 flex flex-col select-none overflow-hidden">
+        <aside className="w-full flex-1 h-full bg-slate-950/45 border-r border-white/10 flex flex-col select-none overflow-hidden">
           {/* Working Tree Quick Row */}
           <div className="p-2.5 border-b border-white/10 shrink-0">
             <div
@@ -1174,7 +1177,7 @@ export const LeftSidebar: React.FC = () => {
       {/* In-App PR Detail Modal */}
       {selectedPR &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75">
             <div className="w-full max-w-xl rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
@@ -1241,7 +1244,7 @@ export const LeftSidebar: React.FC = () => {
       {/* In-App Issue Detail Modal */}
       {selectedIssue &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75">
             <div className="w-full max-w-xl rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
@@ -1305,7 +1308,7 @@ export const LeftSidebar: React.FC = () => {
       {/* Add Worktree Modal */}
       {showWorktreeModal &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75">
             <div className="w-full max-w-md rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl">
               <h3 className="text-sm font-semibold text-white mb-3">
                 Add Git Worktree

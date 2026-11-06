@@ -24,40 +24,43 @@ import {
   X,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { openExternalUrl } from '../services/gitService';
 
 export const RepoToolbar: React.FC = () => {
   const {
-    tabs,
-    activeTabId,
-    refs,
-    currentBranch,
-    headHash,
-    isHeadDetached,
-    selectedBranches,
-    activeRemoteOp,
-    runningOpLabel,
-    isLoading,
-    isConsoleOpen,
-    remoteInfo,
-    detectedIdes,
-    customIdes,
-    defaultIdeId,
-    defaultAiHarnessId,
-    setWorkflowModalOpen,
-    setCreatePRModalOpen,
-    setPublishModalOpen,
-    setIdeModalOpen,
-    openActiveRepoInIde,
-    openActiveRepoInAiHarness,
-    runGitOp,
-    refreshActiveRepo,
-    setConsoleOpen,
-    toggleBranchSelection,
-    clearBranchSelection,
-    selectCommit,
-    showToast,
-  } = useGitStore();
+  tabs,
+  activeTabId,
+  refs,
+  currentBranch,
+  headHash,
+  isHeadDetached,
+  selectedBranches,
+  activeRemoteOp,
+  runningOpLabel,
+  isLoading,
+  isConsoleOpen,
+  remoteInfo,
+  detectedIdes,
+  customIdes,
+  defaultIdeId,
+  defaultAiHarnessId,
+  setWorkflowModalOpen,
+  setCreatePRModalOpen,
+  setPublishModalOpen,
+  setIdeModalOpen,
+  openActiveRepoInIde,
+  openActiveRepoInAiHarness,
+  runGitOp,
+  refreshActiveRepo,
+  setConsoleOpen,
+  toggleBranchSelection,
+  clearBranchSelection,
+  selectCommit,
+  showToast,
+} = useGitStore(
+  useShallow((s) => ({ tabs: s.tabs, activeTabId: s.activeTabId, refs: s.refs, currentBranch: s.currentBranch, headHash: s.headHash, isHeadDetached: s.isHeadDetached, selectedBranches: s.selectedBranches, activeRemoteOp: s.activeRemoteOp, runningOpLabel: s.runningOpLabel, isLoading: s.isLoading, isConsoleOpen: s.isConsoleOpen, remoteInfo: s.remoteInfo, detectedIdes: s.detectedIdes, customIdes: s.customIdes, defaultIdeId: s.defaultIdeId, defaultAiHarnessId: s.defaultAiHarnessId, setWorkflowModalOpen: s.setWorkflowModalOpen, setCreatePRModalOpen: s.setCreatePRModalOpen, setPublishModalOpen: s.setPublishModalOpen, setIdeModalOpen: s.setIdeModalOpen, openActiveRepoInIde: s.openActiveRepoInIde, openActiveRepoInAiHarness: s.openActiveRepoInAiHarness, runGitOp: s.runGitOp, refreshActiveRepo: s.refreshActiveRepo, setConsoleOpen: s.setConsoleOpen, toggleBranchSelection: s.toggleBranchSelection, clearBranchSelection: s.clearBranchSelection, selectCommit: s.selectCommit, showToast: s.showToast }))
+);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -619,7 +622,7 @@ export const RepoToolbar: React.FC = () => {
             />
             <div
               style={{ top: `${branchMenuPos.top}px`, left: `${branchMenuPos.left}px` }}
-              className="fixed z-50 w-72 rounded-xl bg-slate-900/95 border border-white/15 p-2 shadow-2xl backdrop-blur-xl flex flex-col gap-1 select-none"
+              className="fixed z-50 w-72 rounded-xl bg-slate-900/95 border border-white/15 p-2 shadow-2xl flex flex-col gap-1 select-none"
             >
               {/* Header without New Branch shortcut */}
               <div className="px-2 py-1 border-b border-white/10 mb-1">
@@ -829,7 +832,7 @@ export const RepoToolbar: React.FC = () => {
             />
             <div
               style={{ top: `${pullMenuPos.top}px`, left: `${pullMenuPos.left}px` }}
-              className="fixed z-50 w-56 rounded-xl bg-slate-900/95 border border-white/15 p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5 select-none text-xs"
+              className="fixed z-50 w-56 rounded-xl bg-slate-900/95 border border-white/15 p-1.5 shadow-2xl flex flex-col gap-0.5 select-none text-xs"
             >
               <button
                 type="button"
@@ -898,7 +901,7 @@ export const RepoToolbar: React.FC = () => {
       {/* Modal: Pull From Specific Remote & Branch */}
       {showPullFromModal &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
             <div className="w-full max-w-md rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -975,7 +978,7 @@ export const RepoToolbar: React.FC = () => {
                           className="fixed inset-0 z-20"
                           onClick={() => setPullBranchDropdownOpen(false)}
                         />
-                        <div className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl bg-slate-900 border border-white/20 p-2 shadow-2xl backdrop-blur-xl flex flex-col gap-1 max-h-56 overflow-y-auto no-scrollbar">
+                        <div className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl bg-slate-900 border border-white/20 p-2 shadow-2xl flex flex-col gap-1 max-h-56 overflow-y-auto no-scrollbar">
                           {/* Search Input */}
                           <div className="relative mb-1">
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -1105,7 +1108,7 @@ export const RepoToolbar: React.FC = () => {
             />
             <div
               style={{ top: `${branchOpMenuPos.top}px`, left: `${branchOpMenuPos.left}px` }}
-              className="fixed z-50 w-60 rounded-xl bg-slate-900/95 border border-white/15 p-1.5 shadow-2xl backdrop-blur-xl flex flex-col gap-0.5 select-none text-xs"
+              className="fixed z-50 w-60 rounded-xl bg-slate-900/95 border border-white/15 p-1.5 shadow-2xl flex flex-col gap-0.5 select-none text-xs"
             >
               <button
                 type="button"
@@ -1146,7 +1149,7 @@ export const RepoToolbar: React.FC = () => {
       {/* Modal: Create New Branch (with Create Branch From Option) */}
       {showNewBranchModal &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
             <div className="w-full max-w-md rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -1230,7 +1233,7 @@ export const RepoToolbar: React.FC = () => {
                         className="fixed inset-0 z-20"
                         onClick={() => setBranchDropdownOpen(false)}
                       />
-                      <div className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl bg-slate-900 border border-white/20 p-2 shadow-2xl backdrop-blur-xl flex flex-col gap-1 max-h-60 overflow-y-auto no-scrollbar">
+                      <div className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl bg-slate-900 border border-white/20 p-2 shadow-2xl flex flex-col gap-1 max-h-60 overflow-y-auto no-scrollbar">
                         {/* Search Input */}
                         <div className="relative mb-1">
                           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -1405,7 +1408,7 @@ export const RepoToolbar: React.FC = () => {
       {/* Modal: Stash Working Changes */}
       {showStashModal &&
         createPortal(
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
             <div className="w-full max-w-sm rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">

@@ -17,31 +17,34 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { pickIdeExecutable } from '../services/gitService';
 import { IdeConfig } from '../types/git';
 
 export const IdeIntegrationModal: React.FC = () => {
   const {
-    isIdeModalOpen,
-    ideModalInitialFilter,
-    setIdeModalOpen,
-    tabs,
-    activeTabId,
-    detectedIdes,
-    customIdes,
-    customIdePaths,
-    defaultIdeId,
-    defaultAiHarnessId,
-    refreshDetectedIdes,
-    setRepoPreferredIde,
-    setRepoPreferredAiHarness,
-    updateIdeExecutablePath,
-    saveCustomIde,
-    removeCustomIde,
-    openActiveRepoInIde,
-    openActiveRepoInAiHarness,
-    requestConfirm,
-  } = useGitStore();
+  isIdeModalOpen,
+  ideModalInitialFilter,
+  setIdeModalOpen,
+  tabs,
+  activeTabId,
+  detectedIdes,
+  customIdes,
+  customIdePaths,
+  defaultIdeId,
+  defaultAiHarnessId,
+  refreshDetectedIdes,
+  setRepoPreferredIde,
+  setRepoPreferredAiHarness,
+  updateIdeExecutablePath,
+  saveCustomIde,
+  removeCustomIde,
+  openActiveRepoInIde,
+  openActiveRepoInAiHarness,
+  requestConfirm,
+} = useGitStore(
+  useShallow((s) => ({ isIdeModalOpen: s.isIdeModalOpen, ideModalInitialFilter: s.ideModalInitialFilter, setIdeModalOpen: s.setIdeModalOpen, tabs: s.tabs, activeTabId: s.activeTabId, detectedIdes: s.detectedIdes, customIdes: s.customIdes, customIdePaths: s.customIdePaths, defaultIdeId: s.defaultIdeId, defaultAiHarnessId: s.defaultAiHarnessId, refreshDetectedIdes: s.refreshDetectedIdes, setRepoPreferredIde: s.setRepoPreferredIde, setRepoPreferredAiHarness: s.setRepoPreferredAiHarness, updateIdeExecutablePath: s.updateIdeExecutablePath, saveCustomIde: s.saveCustomIde, removeCustomIde: s.removeCustomIde, openActiveRepoInIde: s.openActiveRepoInIde, openActiveRepoInAiHarness: s.openActiveRepoInAiHarness, requestConfirm: s.requestConfirm }))
+);
 
   const [modalTab, setModalTab] = useState<'list' | 'custom'>('list');
   const [categoryFilter, setCategoryFilter] = useState<
@@ -148,7 +151,7 @@ export const IdeIntegrationModal: React.FC = () => {
   return createPortal(
     <div
       onClick={() => setIdeModalOpen(false)}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-6 select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}

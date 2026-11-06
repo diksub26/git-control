@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { DiffEditor, Editor } from '@monaco-editor/react';
+import '../utils/monacoSetup';
 import {
   X,
   Columns,
@@ -12,6 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import {
   applyHunkAction,
   detectLanguageFromPath,
@@ -23,22 +25,24 @@ import { DiffHunk } from '../types/git';
 
 export const DiffAndConflictModal: React.FC = () => {
   const {
-    tabs,
-    activeTabId,
-    activeDiffRequest,
-    activeDiffData,
-    diffViewMode,
-    detectedIdes,
-    customIdes,
-    defaultIdeId,
-    setDiffViewMode,
-    openFileDiff,
-    openActiveRepoInIde,
-    refreshActiveRepo,
-    stageFile,
-    showToast,
-    requestConfirm,
-  } = useGitStore();
+  tabs,
+  activeTabId,
+  activeDiffRequest,
+  activeDiffData,
+  diffViewMode,
+  detectedIdes,
+  customIdes,
+  defaultIdeId,
+  setDiffViewMode,
+  openFileDiff,
+  openActiveRepoInIde,
+  refreshActiveRepo,
+  stageFile,
+  showToast,
+  requestConfirm,
+} = useGitStore(
+  useShallow((s) => ({ tabs: s.tabs, activeTabId: s.activeTabId, activeDiffRequest: s.activeDiffRequest, activeDiffData: s.activeDiffData, diffViewMode: s.diffViewMode, detectedIdes: s.detectedIdes, customIdes: s.customIdes, defaultIdeId: s.defaultIdeId, setDiffViewMode: s.setDiffViewMode, openFileDiff: s.openFileDiff, openActiveRepoInIde: s.openActiveRepoInIde, refreshActiveRepo: s.refreshActiveRepo, stageFile: s.stageFile, showToast: s.showToast, requestConfirm: s.requestConfirm }))
+);
 
   const [conflictContent, setConflictContent] = useState('');
   const [selectedHunkId, setSelectedHunkId] = useState<string | null>(null);
@@ -111,7 +115,7 @@ export const DiffAndConflictModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6">
       <div className="w-full h-full max-w-7xl rounded-2xl bg-slate-950/95 border border-white/15 shadow-2xl flex flex-col overflow-hidden">
         {/* Modal Header */}
         <div className="h-12 px-4 flex items-center justify-between bg-slate-900/80 border-b border-white/10 shrink-0">

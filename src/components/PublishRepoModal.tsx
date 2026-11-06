@@ -15,24 +15,27 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import { getAuthorAvatarUrl } from '../utils/avatar';
 
 export const PublishRepoModal: React.FC = () => {
   const {
-    isPublishModalOpen,
-    setPublishModalOpen,
-    setAccountModalOpen,
-    tabs,
-    activeTabId,
-    accounts,
-    isGitInitialized,
-    headHash,
-    currentBranch,
-    workingFiles,
-    remoteInfo,
-    runningOpLabel,
-    publishLocalRepository,
-  } = useGitStore();
+  isPublishModalOpen,
+  setPublishModalOpen,
+  setAccountModalOpen,
+  tabs,
+  activeTabId,
+  accounts,
+  isGitInitialized,
+  headHash,
+  currentBranch,
+  workingFiles,
+  remoteInfo,
+  runningOpLabel,
+  publishLocalRepository,
+} = useGitStore(
+  useShallow((s) => ({ isPublishModalOpen: s.isPublishModalOpen, setPublishModalOpen: s.setPublishModalOpen, setAccountModalOpen: s.setAccountModalOpen, tabs: s.tabs, activeTabId: s.activeTabId, accounts: s.accounts, isGitInitialized: s.isGitInitialized, headHash: s.headHash, currentBranch: s.currentBranch, workingFiles: s.workingFiles, remoteInfo: s.remoteInfo, runningOpLabel: s.runningOpLabel, publishLocalRepository: s.publishLocalRepository }))
+);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -95,7 +98,7 @@ export const PublishRepoModal: React.FC = () => {
   return createPortal(
     <div
       onClick={() => !isSubmitting && setPublishModalOpen(false)}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-6 select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6 select-none"
     >
       <div
         onClick={(e) => e.stopPropagation()}

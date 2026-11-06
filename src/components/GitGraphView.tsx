@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
+import { useShallow } from 'zustand/react/shallow';
 import {
   buildSvgLinkPath,
   computeGitGraph,
@@ -49,35 +50,37 @@ interface ContextMenuState {
 
 export const GitGraphView: React.FC = () => {
   const {
-    activeTabId,
-    commits,
-    refs,
-    currentBranch,
-    headHash,
-    isHeadDetached,
-    remoteInfo,
-    selectedBranches,
-    searchQuery,
-    dateSince,
-    dateUntil,
-    commitOrdering,
-    firstParentOnly,
-    showAvatars,
-    selectedCommitHash,
-    compareCommitHash,
-    toggleBranchSelection,
-    clearBranchSelection,
-    setSearchQuery,
-    setDateRange,
-    clearDateRange,
-    setCommitOrdering,
-    setFirstParentOnly,
-    setShowAvatars,
-    selectCommit,
-    runGitOp,
-    showToast,
-    requestConfirm,
-  } = useGitStore();
+  activeTabId,
+  commits,
+  refs,
+  currentBranch,
+  headHash,
+  isHeadDetached,
+  remoteInfo,
+  selectedBranches,
+  searchQuery,
+  dateSince,
+  dateUntil,
+  commitOrdering,
+  firstParentOnly,
+  showAvatars,
+  selectedCommitHash,
+  compareCommitHash,
+  toggleBranchSelection,
+  clearBranchSelection,
+  setSearchQuery,
+  setDateRange,
+  clearDateRange,
+  setCommitOrdering,
+  setFirstParentOnly,
+  setShowAvatars,
+  selectCommit,
+  runGitOp,
+  showToast,
+  requestConfirm,
+} = useGitStore(
+  useShallow((s) => ({ activeTabId: s.activeTabId, commits: s.commits, refs: s.refs, currentBranch: s.currentBranch, headHash: s.headHash, isHeadDetached: s.isHeadDetached, remoteInfo: s.remoteInfo, selectedBranches: s.selectedBranches, searchQuery: s.searchQuery, dateSince: s.dateSince, dateUntil: s.dateUntil, commitOrdering: s.commitOrdering, firstParentOnly: s.firstParentOnly, showAvatars: s.showAvatars, selectedCommitHash: s.selectedCommitHash, compareCommitHash: s.compareCommitHash, toggleBranchSelection: s.toggleBranchSelection, clearBranchSelection: s.clearBranchSelection, setSearchQuery: s.setSearchQuery, setDateRange: s.setDateRange, clearDateRange: s.clearDateRange, setCommitOrdering: s.setCommitOrdering, setFirstParentOnly: s.setFirstParentOnly, setShowAvatars: s.setShowAvatars, selectCommit: s.selectCommit, runGitOp: s.runGitOp, showToast: s.showToast, requestConfirm: s.requestConfirm }))
+);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [menuPos, setMenuPos] = useState<{ left: number; top: number }>({
@@ -334,7 +337,7 @@ export const GitGraphView: React.FC = () => {
         setContextMenu(null);
         setOrderDropdownRect(null);
       }}
-      className="flex-1 h-full flex flex-col min-w-0 bg-slate-950/25 backdrop-blur-md select-none"
+      className="flex-1 h-full flex flex-col min-w-0 bg-slate-950/25 select-none"
     >
       {/* vscode-git-graph Control & Filter Bar */}
       <div className="h-9 px-3 flex items-center justify-between gap-2 bg-slate-950/50 border-b border-white/10 shrink-0">
@@ -832,7 +835,7 @@ export const GitGraphView: React.FC = () => {
             style={{ top: menuPos.top, left: menuPos.left }}
             onClick={(e) => e.stopPropagation()}
             onContextMenu={(e) => e.preventDefault()}
-            className="fixed z-[9999] w-64 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl py-1.5 text-xs text-slate-200 select-none"
+            className="fixed z-[9999] w-64 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl py-1.5 text-xs text-slate-200 select-none"
           >
           <div className="px-3 py-1.5 border-b border-white/10 flex items-center justify-between">
             <span className="font-mono text-[11px] text-sky-400">
@@ -1283,7 +1286,7 @@ export const GitGraphView: React.FC = () => {
           <div
             style={{ top: dateDropdownRect.top, left: dateDropdownRect.left }}
             onClick={(e) => e.stopPropagation()}
-            className="fixed z-[9999] w-72 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-3 text-xs text-slate-200 select-none animate-in fade-in-0 zoom-in-95 duration-100"
+            className="fixed z-[9999] w-72 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl p-3 text-xs text-slate-200 select-none animate-in fade-in-0 zoom-in-95 duration-100"
           >
             {/* Header */}
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
@@ -1494,7 +1497,7 @@ export const GitGraphView: React.FC = () => {
           <div
             style={{ top: orderDropdownRect.top, left: orderDropdownRect.left }}
             onClick={(e) => e.stopPropagation()}
-            className="fixed z-[9999] w-44 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-1.5 text-xs text-slate-200 select-none"
+            className="fixed z-[9999] w-44 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl p-1.5 text-xs text-slate-200 select-none"
           >
             {(
               [
@@ -1529,7 +1532,7 @@ export const GitGraphView: React.FC = () => {
       {/* Modal for Create Branch / Create Tag at Specific Commit */}
       {promptDialog &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75">
             <form
               onSubmit={handlePromptSubmit}
               className="w-full max-w-md rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl"
