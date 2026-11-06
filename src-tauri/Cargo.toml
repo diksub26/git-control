@@ -1,6 +1,6 @@
 [package]
 name = "git-control"
-version = "0.1.0"
+version = "0.1.1"
 description = "Blazing-fast, glassmorphic desktop Git GUI & interactive angular commit graph built with Tauri v2, React 18, and Monaco Editor"
 authors = ["Diki & Git Control Contributors"]
 license = "MIT"
