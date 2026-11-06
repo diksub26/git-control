@@ -337,13 +337,17 @@ export interface GraphFetchOptions {
   selectedBranches?: string[]; // empty array = all branches & remotes
   CommitOrdering?: 'date' | 'topo' | 'author-date';
   firstParentOnly?: boolean;
+  dateSince?: string;
+  dateUntil?: string;
 }
 
 export async function loadRepositoryState(
   repoPath: string,
   options: GraphFetchOptions = {}
 ): Promise<FullRepoState> {
-  const maxCount = options.maxCount || 350;
+  const maxCount =
+    options.maxCount ||
+    (options.dateSince || options.dateUntil ? 1000 : 350);
   const orderFlag =
     options.CommitOrdering === 'topo'
       ? '--topo-order'
@@ -479,10 +483,37 @@ export async function loadRepositoryState(
       : ['--branches', '--tags', '--remotes', 'HEAD'];
 
   const logFormat = '%H\x01%h\x01%P\x01%an\x01%ae\x01%at\x01%ct\x01%s';
+  const dateArgs: string[] = [];
+  let sinceSec: number | null = null;
+  let untilSec: number | null = null;
+
+  if (options.dateSince && options.dateSince.trim()) {
+    const raw = options.dateSince.trim();
+    const formatted =
+      raw.includes(' ') || raw.includes('T') ? raw : `${raw} 00:00:00`;
+    dateArgs.push(`--since=${formatted}`);
+    const sDate = new Date(formatted);
+    if (!isNaN(sDate.getTime())) {
+      sinceSec = Math.floor(sDate.getTime() / 1000);
+    }
+  }
+
+  if (options.dateUntil && options.dateUntil.trim()) {
+    const raw = options.dateUntil.trim();
+    const formatted =
+      raw.includes(' ') || raw.includes('T') ? raw : `${raw} 23:59:59`;
+    dateArgs.push(`--until=${formatted}`);
+    const uDate = new Date(formatted);
+    if (!isNaN(uDate.getTime())) {
+      untilSec = Math.floor(uDate.getTime() / 1000);
+    }
+  }
+
   const logRes = await execGit(repoPath, [
     'log',
     ...branchArg,
     ...firstParentArg,
+    ...dateArgs,
     orderFlag,
     `-n`,
     String(maxCount),
@@ -521,6 +552,10 @@ export async function loadRepositoryState(
     const [hash, shortHash, parentsStr, authorName, authorEmail, authorDate, commitDate, selector, subject] =
       line.split('\x01');
     if (!hash) continue;
+
+    const stashTime = parseInt(commitDate || '0', 10);
+    if (sinceSec !== null && stashTime < sinceSec) continue;
+    if (untilSec !== null && stashTime > untilSec) continue;
     const parents = parentsStr ? parentsStr.trim().split(' ').filter(Boolean) : [];
     const baseParent = parents[0]; // First parent is the branch commit where stash was created
     const stashRef: GitRef = {
@@ -557,7 +592,11 @@ export async function loadRepositoryState(
   // 6. Inject "Uncommitted Changes (*)" node at the very top of the graph if working tree is dirty
   if (workingFiles.length > 0 && headHash) {
     const nowSec = Math.floor(Date.now() / 1000);
-    commits.unshift({
+    const inRange =
+      (sinceSec === null || nowSec >= sinceSec) &&
+      (untilSec === null || nowSec <= untilSec);
+    if (inRange) {
+      commits.unshift({
       hash: 'UNCOMMITTED',
       shortHash: '*',
       parents: [headHash],
@@ -569,6 +608,7 @@ export async function loadRepositoryState(
       refs: [],
       isUncommitted: true,
     });
+    }
   }
 
   // 7. Fetch Worktrees & Submodules (fast native git commands without spawning MSYS2 sh.exe)
