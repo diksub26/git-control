@@ -8,6 +8,8 @@
 *Built with Tauri v2 (Rust), React 18, TypeScript, and Monaco Editor for Windows 11 & macOS (Linux: not officially supported yet).*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-38bdf8.svg)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/diksub26/git-control?include_prereleases&color=8b5cf6)](https://github.com/diksub26/git-control/releases/latest)
+[![Release Build](https://img.shields.io/github/actions/workflow/status/diksub26/git-control/release.yml?label=release%20build)](https://github.com/diksub26/git-control/actions/workflows/release.yml)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2.0-ffc131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
 [![Rust](https://img.shields.io/badge/Backend-Rust-dea584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![React 18](https://img.shields.io/badge/Frontend-React_18_%2B_TypeScript-61dafb?logo=react&logoColor=white)](https://react.dev/)
@@ -39,6 +41,7 @@
 - **👤 Multi-Account & Identity Manager**
   - Auto-discovers existing system `--global` and per-repository `--local` Git identities (`user.name` & `user.email`).
   - Login with **GitHub**, **GitLab**, or **Bitbucket** Personal Access Tokens (PAT) with 1-click profile verification and avatar sync.
+  - Tokens are stored securely in the **OS native keyring** (Windows Credential Manager / macOS Keychain), never in plaintext.
   - Switch between **Work** and **Personal** accounts globally (`git config --global`) or per-repository (`git config --local`).
 
 - **📝 Monaco Diff Viewer, Hunk Staging & Conflict Resolver**
@@ -68,6 +71,25 @@
 - **🛡️ Destructive Action Safeguards & Live Command Console**
   - Confirmation modals with exact Git command previews before executing destructive operations (Delete Branch, Delete Tag, Drop Stash, Hard Reset, Discard Changes/Hunks).
   - Real-time **Git Command Log Console** showing every executed `git` command, exit code, and execution duration in milliseconds.
+
+---
+
+## 📥 Download & Install
+
+Download the latest installer from the **[Releases page](https://github.com/diksub26/git-control/releases/latest)**:
+
+| Platform | File |
+| :--- | :--- |
+| **Windows 11** | `.msi` or `-setup.exe` |
+| **macOS (Apple Silicon)** | `aarch64.dmg` |
+| **macOS (Intel)** | `x64.dmg` |
+
+> [!NOTE]
+> Installers are currently **not code-signed**, so your OS may show a security warning on first launch:
+> - **Windows (SmartScreen)**: click **More info → Run anyway**.
+> - **macOS (Gatekeeper)**: right-click the app and choose **Open**.
+
+**Requirements**: **Git** (`2.30+`) in your system `PATH`. On Windows, the WebView2 runtime is also required (preinstalled on Windows 11).
 
 ---
 
@@ -104,7 +126,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-username/git-control.git
+git clone https://github.com/diksub26/git-control.git
 cd git-control
 
 # 2. Install frontend dependencies with pnpm
@@ -120,6 +142,23 @@ pnpm tauri dev
 # Build native installer (.msi / .exe on Windows, .dmg / .app on macOS)
 pnpm tauri build
 ```
+
+### Publishing a Release
+
+Releases are built automatically by [GitHub Actions](./.github/workflows/release.yml) using [`tauri-action`](https://github.com/tauri-apps/tauri-action) for Windows and macOS (Apple Silicon & Intel).
+
+```bash
+# 1. Keep the version in sync: package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml
+# 2. Verify the build
+pnpm build
+cargo check --manifest-path src-tauri/Cargo.toml
+
+# 3. Tag and push — this triggers the workflow
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+When the workflow finishes, a **draft** release with all installers appears on the Releases page. Edit the release notes and click **Publish release**.
 
 ---
 
