@@ -17,6 +17,8 @@ import {
   Sparkles,
   ChevronDown,
   Radio,
+  Calendar,
+  X,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import {
@@ -30,6 +32,13 @@ import { GitCommit, GitRef } from '../types/git';
 const ROW_HEIGHT = 34;
 const COL_WIDTH = 18;
 const PAD_LEFT = 18;
+
+function toLocalDateString(d: Date): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 interface ContextMenuState {
   x: number;
@@ -49,6 +58,8 @@ export const GitGraphView: React.FC = () => {
     remoteInfo,
     selectedBranches,
     searchQuery,
+    dateSince,
+    dateUntil,
     commitOrdering,
     firstParentOnly,
     showAvatars,
@@ -57,6 +68,8 @@ export const GitGraphView: React.FC = () => {
     toggleBranchSelection,
     clearBranchSelection,
     setSearchQuery,
+    setDateRange,
+    clearDateRange,
     setCommitOrdering,
     setFirstParentOnly,
     setShowAvatars,
@@ -84,6 +97,13 @@ export const GitGraphView: React.FC = () => {
     left: number;
     top: number;
   } | null>(null);
+  const [dateDropdownRect, setDateDropdownRect] = useState<{
+    left: number;
+    top: number;
+  } | null>(null);
+  const [tempSince, setTempSince] = useState(dateSince);
+  const [tempUntil, setTempUntil] = useState(dateUntil);
+  const dateBtnRef = useRef<HTMLButtonElement | null>(null);
 
   useLayoutEffect(() => {
     if (!contextMenu) return;
@@ -108,13 +128,15 @@ export const GitGraphView: React.FC = () => {
   useEffect(() => {
     setContextMenu(null);
     setOrderDropdownRect(null);
+    setDateDropdownRect(null);
   }, [activeTabId]);
 
   useEffect(() => {
-    if (!contextMenu && !orderDropdownRect) return;
+    if (!contextMenu && !orderDropdownRect && !dateDropdownRect) return;
     const closeAll = () => {
       setContextMenu(null);
       setOrderDropdownRect(null);
+      setDateDropdownRect(null);
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closeAll();
@@ -127,7 +149,7 @@ export const GitGraphView: React.FC = () => {
       window.removeEventListener('resize', closeAll);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [contextMenu, orderDropdownRect]);
+  }, [contextMenu, orderDropdownRect, dateDropdownRect]);
 
   // Compute full graph layout from commits
   const graph = useMemo(() => computeGitGraph(commits), [commits]);
@@ -201,6 +223,38 @@ export const GitGraphView: React.FC = () => {
   );
 
   // Filter matching rows for search query highlight
+  const isDateFiltered = Boolean(dateSince || dateUntil);
+  const dateFilterLabel = useMemo(() => {
+    if (!dateSince && !dateUntil) return 'Date Range';
+    const today = toLocalDateString(new Date());
+    const yesterdayDate = new Date();
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+    const yesterday = toLocalDateString(yesterdayDate);
+
+    const d7 = new Date();
+    d7.setDate(d7.getDate() - 6);
+    const last7 = toLocalDateString(d7);
+
+    const d30 = new Date();
+    d30.setDate(d30.getDate() - 29);
+    const last30 = toLocalDateString(d30);
+
+    const now = new Date();
+    const monthStart = toLocalDateString(
+      new Date(now.getFullYear(), now.getMonth(), 1)
+    );
+
+    if (dateSince === today && dateUntil === today) return 'Today';
+    if (dateSince === yesterday && dateUntil === yesterday) return 'Yesterday';
+    if (dateSince === last7 && dateUntil === today) return 'Last 7 Days';
+    if (dateSince === last30 && dateUntil === today) return 'Last 30 Days';
+    if (dateSince === monthStart && dateUntil === today) return 'This Month';
+    if (dateSince && dateUntil) return `${dateSince} – ${dateUntil}`;
+    if (dateSince) return `From ${dateSince}`;
+    if (dateUntil) return `Until ${dateUntil}`;
+    return 'Date Filtered';
+  }, [dateSince, dateUntil]);
+
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const matchingHashes = useMemo(() => {
     if (!normalizedQuery) return null;
@@ -301,6 +355,60 @@ export const GitGraphView: React.FC = () => {
               </span>
             )}
           </div>
+
+          {/* Date Range Filter Button */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              ref={dateBtnRef}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (dateDropdownRect) {
+                  setDateDropdownRect(null);
+                } else {
+                  setOrderDropdownRect(null);
+                  setTempSince(dateSince);
+                  setTempUntil(dateUntil);
+                  const r = e.currentTarget.getBoundingClientRect();
+                  const popoverWidth = 288;
+                  let left = r.left;
+                  if (left + popoverWidth > window.innerWidth - 12) {
+                    left = Math.max(12, window.innerWidth - popoverWidth - 12);
+                  }
+                  setDateDropdownRect({ left, top: r.bottom + 6 });
+                }
+              }}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs transition border cursor-pointer ${
+                isDateFiltered
+                  ? 'bg-sky-500/20 hover:bg-sky-500/30 border-sky-400/40 text-sky-200 font-medium shadow-sm shadow-sky-500/10'
+                  : 'bg-white/[0.05] hover:bg-white/10 border-white/10 text-slate-300'
+              }`}
+              title="Filter commits by date range"
+            >
+              <Calendar
+                className={`w-3.5 h-3.5 ${
+                  isDateFiltered ? 'text-sky-400' : 'text-slate-400'
+                }`}
+              />
+              <span className="whitespace-nowrap">{dateFilterLabel}</span>
+              {isDateFiltered ? (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    await clearDateRange();
+                  }}
+                  className="ml-0.5 p-0.5 rounded hover:bg-sky-500/30 text-sky-300 hover:text-white cursor-pointer"
+                  title="Clear date filter"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Order & View Controls */}
@@ -383,6 +491,35 @@ export const GitGraphView: React.FC = () => {
         }}
         className="flex-1 overflow-auto relative"
       >
+        {totalNodes === 0 ? (
+          <div className="h-full min-h-[300px] flex flex-col items-center justify-center p-8 text-center text-slate-400 select-none">
+            <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mb-3 text-slate-500">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <div className="text-sm font-medium text-slate-200">
+              {isDateFiltered
+                ? 'No commits found in this date range'
+                : 'No commits found'}
+            </div>
+            <div className="text-xs text-slate-500 mt-1 max-w-sm">
+              {isDateFiltered ? (
+                <span>
+                  No commits match the selected date window ({dateFilterLabel}). Try adjusting the dates or{' '}
+                  <button
+                    type="button"
+                    onClick={() => clearDateRange()}
+                    className="text-sky-400 underline hover:text-sky-300 inline font-medium cursor-pointer"
+                  >
+                    reset date filter
+                  </button>
+                  .
+                </span>
+              ) : (
+                'There are no commits to display for the current branch filter.'
+              )}
+            </div>
+          </div>
+        ) : (
         <div
           className="relative min-w-[680px]"
           style={{ height: totalHeight }}
@@ -684,6 +821,7 @@ export const GitGraphView: React.FC = () => {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Right-Click Context Menu rendered via Portal to document.body so backdrop-blur does not offset fixed coordinates */}
@@ -1135,6 +1273,217 @@ export const GitGraphView: React.FC = () => {
               <span>Inspect & Stage Working Changes</span>
             </button>
           )}
+          </div>,
+          document.body
+        )}
+
+      {/* Dropdown Popover for Date Range Filter */}
+      {dateDropdownRect &&
+        createPortal(
+          <div
+            style={{ top: dateDropdownRect.top, left: dateDropdownRect.left }}
+            onClick={(e) => e.stopPropagation()}
+            className="fixed z-[9999] w-72 rounded-xl bg-slate-900/95 backdrop-blur-xl border border-white/15 shadow-2xl p-3 text-xs text-slate-200 select-none animate-in fade-in-0 zoom-in-95 duration-100"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+              <div className="flex items-center gap-1.5 font-medium text-white">
+                <Calendar className="w-3.5 h-3.5 text-sky-400" />
+                <span>Filter by Date Range</span>
+              </div>
+              {isDateFiltered && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await clearDateRange();
+                    setDateDropdownRect(null);
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                >
+                  Clear filter
+                </button>
+              )}
+            </div>
+
+            {/* Quick Presets */}
+            <div className="text-[10px] uppercase font-semibold text-slate-400 mb-1.5 tracking-wider">
+              Quick Presets
+            </div>
+            <div className="grid grid-cols-2 gap-1 mb-3">
+              {[
+                {
+                  id: 'all',
+                  label: 'All Time',
+                  action: () => clearDateRange(),
+                  active: !isDateFiltered,
+                },
+                {
+                  id: 'today',
+                  label: 'Today',
+                  action: () => {
+                    const today = toLocalDateString(new Date());
+                    return setDateRange(today, today);
+                  },
+                  active:
+                    dateSince === toLocalDateString(new Date()) &&
+                    dateUntil === toLocalDateString(new Date()),
+                },
+                {
+                  id: 'yesterday',
+                  label: 'Yesterday',
+                  action: () => {
+                    const y = new Date();
+                    y.setDate(y.getDate() - 1);
+                    const yStr = toLocalDateString(y);
+                    return setDateRange(yStr, yStr);
+                  },
+                  active: (() => {
+                    const y = new Date();
+                    y.setDate(y.getDate() - 1);
+                    const yStr = toLocalDateString(y);
+                    return dateSince === yStr && dateUntil === yStr;
+                  })(),
+                },
+                {
+                  id: '7days',
+                  label: 'Last 7 Days',
+                  action: () => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 6);
+                    return setDateRange(
+                      toLocalDateString(d),
+                      toLocalDateString(new Date())
+                    );
+                  },
+                  active: (() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 6);
+                    return (
+                      dateSince === toLocalDateString(d) &&
+                      dateUntil === toLocalDateString(new Date())
+                    );
+                  })(),
+                },
+                {
+                  id: '30days',
+                  label: 'Last 30 Days',
+                  action: () => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 29);
+                    return setDateRange(
+                      toLocalDateString(d),
+                      toLocalDateString(new Date())
+                    );
+                  },
+                  active: (() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() - 29);
+                    return (
+                      dateSince === toLocalDateString(d) &&
+                      dateUntil === toLocalDateString(new Date())
+                    );
+                  })(),
+                },
+                {
+                  id: 'month',
+                  label: 'This Month',
+                  action: () => {
+                    const now = new Date();
+                    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    return setDateRange(
+                      toLocalDateString(start),
+                      toLocalDateString(now)
+                    );
+                  },
+                  active: (() => {
+                    const now = new Date();
+                    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+                    return (
+                      dateSince === toLocalDateString(start) &&
+                      dateUntil === toLocalDateString(now)
+                    );
+                  })(),
+                },
+              ].map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={async () => {
+                    await preset.action();
+                    setDateDropdownRect(null);
+                  }}
+                  className={`px-2 py-1.5 rounded-lg text-left text-xs transition border cursor-pointer ${
+                    preset.active
+                      ? 'bg-sky-500/20 border-sky-400/40 text-sky-200 font-medium'
+                      : 'bg-white/[0.04] border-white/5 hover:bg-white/10 text-slate-300'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Range */}
+            <div className="pt-2 border-t border-white/10">
+              <div className="text-[10px] uppercase font-semibold text-slate-400 mb-2 tracking-wider">
+                Custom Range
+              </div>
+              <div className="space-y-2">
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">
+                    From (Since)
+                  </label>
+                  <input
+                    type="date"
+                    value={tempSince}
+                    max={tempUntil || undefined}
+                    onChange={(e) => setTempSince(e.target.value)}
+                    className="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-xs text-white focus:outline-none focus:border-sky-400 [color-scheme:dark]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">
+                    To (Until)
+                  </label>
+                  <input
+                    type="date"
+                    value={tempUntil}
+                    min={tempSince || undefined}
+                    onChange={(e) => setTempUntil(e.target.value)}
+                    className="w-full px-2.5 py-1 rounded-lg bg-black/40 border border-white/10 text-xs text-white focus:outline-none focus:border-sky-400 [color-scheme:dark]"
+                  />
+                </div>
+              </div>
+
+              {tempSince && tempUntil && tempSince > tempUntil && (
+                <p className="text-[11px] text-rose-400 mt-1.5">
+                  Start date cannot be after end date.
+                </p>
+              )}
+
+              <div className="flex items-center justify-end gap-2 mt-3 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setDateDropdownRect(null)}
+                  className="px-2.5 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(
+                    tempSince && tempUntil && tempSince > tempUntil
+                  )}
+                  onClick={async () => {
+                    await setDateRange(tempSince, tempUntil);
+                    setDateDropdownRect(null);
+                  }}
+                  className="px-3 py-1 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-xs font-medium text-white transition shadow-sm cursor-pointer"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
           </div>,
           document.body
         )}

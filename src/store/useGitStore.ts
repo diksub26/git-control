@@ -106,6 +106,8 @@ interface GitStoreState {
   graphStyle: GraphStyle;
   selectedBranches: string[];
   searchQuery: string;
+  dateSince: string;
+  dateUntil: string;
   commitOrdering: 'date' | 'topo' | 'author-date';
   firstParentOnly: boolean;
   showAvatars: boolean;
@@ -214,6 +216,8 @@ interface GitStoreState {
   selectBranchOnly: (branch: string) => Promise<void>;
   clearBranchSelection: () => Promise<void>;
   setSearchQuery: (q: string) => void;
+  setDateRange: (since: string, until: string) => Promise<void>;
+  clearDateRange: () => Promise<void>;
   setCommitOrdering: (order: 'date' | 'topo' | 'author-date') => Promise<void>;
   setFirstParentOnly: (val: boolean) => Promise<void>;
   setShowAvatars: (val: boolean) => void;
@@ -472,6 +476,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     graphStyle: 'angular',
     selectedBranches: initialActiveTab?.selectedBranches || [],
     searchQuery: initialActiveTab?.searchQuery || '',
+    dateSince: initialActiveTab?.dateSince || '',
+    dateUntil: initialActiveTab?.dateUntil || '',
     commitOrdering: 'date',
     firstParentOnly: false,
     showAvatars: true,
@@ -1697,6 +1703,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         conflictCount: 0,
         selectedBranches: [],
         searchQuery: '',
+        dateSince: '',
+        dateUntil: '',
       };
 
       const nextTabs = [...get().tabs, newTab];
@@ -1710,6 +1718,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         isRepoModalOpen: false,
         selectedBranches: [],
         searchQuery: '',
+        dateSince: '',
+        dateUntil: '',
         selectedCommitHash: null,
         compareCommitHash: null,
         activeDiffRequest: null,
@@ -1736,6 +1746,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           workingFiles: [],
           selectedBranches: [],
           searchQuery: '',
+          dateSince: '',
+          dateUntil: '',
           selectedCommitHash: null,
           compareCommitHash: null,
           isRepoModalOpen: true,
@@ -1759,6 +1771,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           ? {
               selectedBranches: nextActiveTab.selectedBranches || [],
               searchQuery: nextActiveTab.searchQuery || '',
+              dateSince: nextActiveTab.dateSince || '',
+              dateUntil: nextActiveTab.dateUntil || '',
               selectedCommitHash: null,
               compareCommitHash: null,
               activeDiffRequest: null,
@@ -1793,6 +1807,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         activeTabId: tabId,
         selectedBranches: targetTab?.selectedBranches || [],
         searchQuery: targetTab?.searchQuery || '',
+        dateSince: targetTab?.dateSince || '',
+        dateUntil: targetTab?.dateUntil || '',
         selectedCommitHash: null,
         compareCommitHash: null,
         activeDiffRequest: null,
@@ -1856,7 +1872,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     },
 
     refreshActiveRepo: async () => {
-      const { tabs, activeTabId, selectedBranches, commitOrdering, firstParentOnly, currentBranch: prevBranch } = get();
+      const { tabs, activeTabId, selectedBranches, commitOrdering, firstParentOnly, dateSince, dateUntil, currentBranch: prevBranch } = get();
       const activeTab = tabs.find((t) => t.id === activeTabId);
       if (!activeTab) return;
 
@@ -1877,6 +1893,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           selectedBranches: targetSelectedBranches,
           CommitOrdering: commitOrdering,
           firstParentOnly,
+          dateSince,
+          dateUntil,
         });
 
         // Guard: Abort if user switched tabs while loading repository state
@@ -1901,6 +1919,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
             selectedBranches: targetSelectedBranches,
             CommitOrdering: commitOrdering,
             firstParentOnly,
+            dateSince,
+            dateUntil,
           });
           state.commits = refilteredState.commits;
           state.headHash = refilteredState.headHash;
@@ -1924,14 +1944,17 @@ export const useGitStore = create<GitStoreState>((set, get) => {
                 uncommittedCount: state.workingFiles.length,
                 conflictCount,
                 selectedBranches: sanitizedSelectedBranches,
+                dateSince,
+                dateUntil,
               }
             : t
         );
         localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
 
         let selectedHash = get().selectedCommitHash;
-        if (!selectedHash && state.commits.length > 0) {
-          selectedHash = state.commits[0].hash;
+        const hashExists = state.commits.some((c) => c.hash === selectedHash);
+        if (!hashExists) {
+          selectedHash = state.commits.length > 0 ? state.commits[0].hash : null;
         }
 
         set({
@@ -1947,6 +1970,8 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           worktrees: state.worktrees,
           submodules: state.submodules,
           remoteInfo: state.remoteInfo,
+          selectedCommitHash: selectedHash,
+          ...(selectedHash ? {} : { selectedCommitFiles: [], selectedCommitBody: '' }),
           isLoading: false,
         });
 
@@ -2015,6 +2040,26 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       );
       localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
       set({ searchQuery, tabs: updatedTabs });
+    },
+
+    setDateRange: async (dateSince: string, dateUntil: string) => {
+      const { tabs, activeTabId } = get();
+      const updatedTabs = tabs.map((t) =>
+        t.id === activeTabId ? { ...t, dateSince, dateUntil } : t
+      );
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+      set({ dateSince, dateUntil, tabs: updatedTabs });
+      await get().refreshActiveRepo();
+    },
+
+    clearDateRange: async () => {
+      const { tabs, activeTabId } = get();
+      const updatedTabs = tabs.map((t) =>
+        t.id === activeTabId ? { ...t, dateSince: '', dateUntil: '' } : t
+      );
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+      set({ dateSince: '', dateUntil: '', tabs: updatedTabs });
+      await get().refreshActiveRepo();
     },
 
     setCommitOrdering: async (commitOrdering) => {

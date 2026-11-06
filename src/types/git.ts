@@ -164,6 +164,8 @@ export interface RepoTab {
   conflictCount: number;
   selectedBranches?: string[];
   searchQuery?: string;
+  dateSince?: string;
+  dateUntil?: string;
   preferredIdeId?: string;
   preferredAiHarnessId?: string;
 }
