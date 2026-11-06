@@ -24,7 +24,8 @@
         "focus": true,
         "transparent": false,
         "decorations": true,
-        "resizable": true
+        "resizable": true,
+        "maximized": true
       }
     ],
     "security": {
