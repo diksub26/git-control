@@ -101,6 +101,13 @@ export const RepoToolbar: React.FC = () => {
   const remoteBranches = refs.filter((r) => r.type === 'remote-branch');
   const isAllSelected = selectedBranches.length === 0 || selectedBranches.includes('__ALL__');
 
+  // Active branch ref & commit counters for Pull (behind) and Push (ahead)
+  const currentBranchRef = refs.find(
+    (r) => r.type === 'local-branch' && (r.isCurrentHead || r.name === currentBranch)
+  );
+  const behindCount = currentBranchRef?.behind || 0;
+  const aheadCount = currentBranchRef?.ahead || 0;
+
   // Remotes list for Pull From
   const availableRemotes = Array.from(
     new Set(
@@ -339,7 +346,11 @@ export const RepoToolbar: React.FC = () => {
                     ? 'bg-emerald-500/25 text-emerald-200 font-medium'
                     : 'text-slate-200 hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed'
                 }`}
-                title="git pull (Fast-forward / Merge default upstream)"
+                title={
+                  behindCount > 0
+                    ? `git pull (${behindCount} incoming commit${behindCount > 1 ? 's' : ''})`
+                    : 'git pull (Fast-forward / Merge default upstream)'
+                }
               >
                 {activeRemoteOp === 'pull' ? (
                   <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />
@@ -347,6 +358,14 @@ export const RepoToolbar: React.FC = () => {
                   <ArrowDownToLine className="w-3.5 h-3.5 text-emerald-400" />
                 )}
                 <span>{activeRemoteOp === 'pull' ? 'Pulling...' : 'Pull'}</span>
+                {activeRemoteOp !== 'pull' && behindCount > 0 && (
+                  <span
+                    className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono font-semibold leading-none shrink-0"
+                    title={`${behindCount} incoming commit${behindCount > 1 ? 's' : ''}`}
+                  >
+                    {behindCount > 999 ? '999+' : behindCount}
+                  </span>
+                )}
               </button>
 
               <button
@@ -370,7 +389,11 @@ export const RepoToolbar: React.FC = () => {
                   ? 'bg-indigo-500/25 text-indigo-200 font-medium'
                   : 'text-slate-200 hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed'
               }`}
-              title={`git push -u origin ${currentBranch}`}
+              title={
+                aheadCount > 0
+                  ? `git push -u origin ${currentBranch} (${aheadCount} unpushed commit${aheadCount > 1 ? 's' : ''})`
+                  : `git push -u origin ${currentBranch}`
+              }
             >
               {activeRemoteOp === 'push' ? (
                 <Loader2 className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
@@ -378,6 +401,14 @@ export const RepoToolbar: React.FC = () => {
                 <ArrowUpFromLine className="w-3.5 h-3.5 text-indigo-400" />
               )}
               <span>{activeRemoteOp === 'push' ? 'Pushing...' : 'Push'}</span>
+              {activeRemoteOp !== 'push' && aheadCount > 0 && (
+                <span
+                  className="px-1.5 py-0.5 min-w-[18px] text-center rounded-full bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-[10px] font-mono font-semibold leading-none shrink-0"
+                  title={`${aheadCount} unpushed commit${aheadCount > 1 ? 's' : ''}`}
+                >
+                  {aheadCount > 999 ? '999+' : aheadCount}
+                </span>
+              )}
             </button>
           </div>
 
@@ -806,13 +837,20 @@ export const RepoToolbar: React.FC = () => {
                   setShowPullMenu(false);
                   runGitOp('Pull', ['pull']);
                 }}
-                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-slate-200 text-left transition"
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 text-slate-200 text-left transition"
               >
-                <ArrowDownToLine className="w-3.5 h-3.5 text-emerald-400" />
-                <div>
-                  <div className="font-medium">Pull (Default)</div>
-                  <div className="text-[10px] text-slate-400 font-mono">git pull</div>
+                <div className="flex items-center gap-2">
+                  <ArrowDownToLine className="w-3.5 h-3.5 text-emerald-400" />
+                  <div>
+                    <div className="font-medium">Pull (Default)</div>
+                    <div className="text-[10px] text-slate-400 font-mono">git pull</div>
+                  </div>
                 </div>
+                {behindCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-[10px] font-mono font-semibold">
+                    {behindCount}
+                  </span>
+                )}
               </button>
 
               <button
