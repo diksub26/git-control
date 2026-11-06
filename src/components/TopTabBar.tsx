@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import {
   FolderGit2,
@@ -11,6 +11,9 @@ import {
   GitFork,
   Users,
   Loader2,
+  GitBranch,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useGitStore } from '../store/useGitStore';
 import { pickRepositoryFolder } from '../services/gitService';
@@ -31,10 +34,13 @@ export const TopTabBar: React.FC = () => {
     setAccountModalOpen,
     setActiveTab,
     closeRepoTab,
+    closeOtherTabs,
+    closeTabsToTheRight,
     openRepoTab,
     removeSavedRepo,
     cloneRepository,
     requestConfirm,
+    showToast,
   } = useGitStore();
 
   const [repoModalTab, setRepoModalTab] = useState<'open' | 'clone'>('open');
@@ -43,6 +49,24 @@ export const TopTabBar: React.FC = () => {
   const [cloneUrl, setCloneUrl] = useState('');
   const [cloneParentDir, setCloneParentDir] = useState('');
   const [cloneFolderName, setCloneFolderName] = useState('');
+  const [tabContextMenu, setTabContextMenu] = useState<{
+    tab: (typeof tabs)[0];
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const activeTabRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll active tab into view when activeTabId changes
+  useEffect(() => {
+    if (activeTabRef.current) {
+      activeTabRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'nearest',
+      });
+    }
+  }, [activeTabId]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -129,49 +153,160 @@ export const TopTabBar: React.FC = () => {
         <div className="h-4 w-px bg-white/10 mx-0.5 shrink-0" />
 
         {/* Multi-Repo Tabs Container (Takes available width & scrolls horizontally) */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0 py-0.5">
+        <div
+          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0 py-0.5"
+          role="tablist"
+          aria-label="Repository tabs"
+        >
           {tabs.map((tab) => {
             const isActive = tab.id === activeTabId;
             return (
               <div
                 key={tab.id}
+                ref={isActive ? activeTabRef : null}
+                role="tab"
+                aria-selected={isActive}
+                tabIndex={0}
                 onClick={() => setActiveTab(tab.id)}
-                className={`group flex items-center gap-2 px-3 py-1 rounded-lg text-xs cursor-pointer transition-all border shrink-0 ${
+                onMouseDown={(e) => {
+                  if (e.button === 1) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeRepoTab(tab.id);
+                  }
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setTabContextMenu({
+                    tab,
+                    x: e.clientX,
+                    y: e.clientY,
+                  });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setActiveTab(tab.id);
+                  }
+                }}
+                className={`group relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs cursor-pointer select-none transition-all border shrink-0 ${
                   isActive
-                    ? 'bg-white/12 border-white/20 text-white shadow-sm'
-                    : 'bg-white/[0.03] border-transparent text-slate-400 hover:bg-white/[0.07] hover:text-slate-200'
+                    ? 'bg-gradient-to-b from-sky-500/15 via-slate-900/95 to-slate-950 text-white border-sky-400/40 shadow-[0_2px_12px_rgba(2,132,199,0.22)] ring-1 ring-sky-400/20'
+                    : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:bg-white/[0.06] hover:border-white/15 hover:text-slate-200'
                 }`}
-                title={tab.path}
+                title={`${tab.name}\n${tab.path}\nBranch: ${
+                  tab.isHeadDetached && tab.headHash
+                    ? `HEAD (${tab.headHash.slice(0, 7)})`
+                    : tab.currentBranch || 'HEAD'
+                }${tab.uncommittedCount ? `\nUncommitted files: ${tab.uncommittedCount}` : ''}${
+                  tab.conflictCount ? `\nConflicts: ${tab.conflictCount}` : ''
+                }\n\nTip: Middle-click to close, right-click for options`}
               >
-                <span className="font-medium truncate max-w-[130px]">{tab.name}</span>
+                {/* Active Top Accent Line */}
+                {isActive && (
+                  <div className="absolute -top-[1px] inset-x-2.5 h-[2px] bg-gradient-to-r from-sky-400 via-cyan-300 to-indigo-400 rounded-full shadow-[0_0_8px_rgba(56,189,248,0.9)] z-10" />
+                )}
+
+                {/* Status Dot & Repo Folder Icon */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {isActive ? (
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-60" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-400 shadow-[0_0_6px_#38bdf8]" />
+                    </span>
+                  ) : null}
+                  <FolderGit2
+                    className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                      isActive
+                        ? 'text-sky-400 drop-shadow-[0_0_5px_rgba(56,189,248,0.5)]'
+                        : 'text-slate-500 group-hover:text-slate-400'
+                    }`}
+                  />
+                </div>
+
+                {/* Repository Name */}
                 <span
-                  className={`px-1.5 py-0.5 rounded font-mono text-[10px] ${
-                    tab.isHeadDetached
-                      ? 'bg-amber-500/15 text-amber-300 border border-amber-400/30'
-                      : 'bg-sky-500/15 text-sky-300'
+                  className={`truncate max-w-[130px] transition-colors ${
+                    isActive
+                      ? 'font-semibold text-white tracking-tight'
+                      : 'font-medium text-slate-400 group-hover:text-slate-200'
                   }`}
                 >
-                  {tab.isHeadDetached && tab.headHash
-                    ? `HEAD (${tab.headHash.slice(0, 7)})`
-                    : tab.currentBranch}
+                  {tab.name}
                 </span>
+
+                {/* Branch Badge */}
+                <span
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[10px] transition-all ${
+                    tab.isHeadDetached
+                      ? isActive
+                        ? 'bg-amber-500/25 text-amber-200 border border-amber-400/40 font-medium'
+                        : 'bg-amber-500/10 text-amber-300/80 border border-amber-400/20'
+                      : isActive
+                        ? 'bg-sky-500/25 text-sky-200 border border-sky-400/40 font-medium shadow-xs'
+                        : 'bg-white/[0.04] text-slate-400 border border-white/5 group-hover:bg-white/[0.08] group-hover:text-slate-300'
+                  }`}
+                >
+                  <GitBranch
+                    className={`w-2.5 h-2.5 shrink-0 ${
+                      tab.isHeadDetached
+                        ? isActive
+                          ? 'text-amber-300'
+                          : 'text-amber-400/70'
+                        : isActive
+                          ? 'text-sky-300'
+                          : 'text-slate-500 group-hover:text-slate-400'
+                    }`}
+                  />
+                  <span className="truncate max-w-[90px]">
+                    {tab.isHeadDetached && tab.headHash
+                      ? `HEAD (${tab.headHash.slice(0, 7)})`
+                      : tab.currentBranch || 'HEAD'}
+                  </span>
+                </span>
+
+                {/* Uncommitted Changes Badge */}
                 {tab.uncommittedCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-medium">
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] transition-colors ${
+                      isActive
+                        ? 'bg-amber-500/25 text-amber-200 border border-amber-400/35 font-semibold'
+                        : 'bg-amber-500/10 text-amber-300/75 border border-amber-400/20 font-normal'
+                    }`}
+                    title={`${tab.uncommittedCount} uncommitted files`}
+                  >
                     *{tab.uncommittedCount}
                   </span>
                 )}
+
+                {/* Conflict Badge */}
                 {tab.conflictCount > 0 && (
-                  <span className="px-1.5 py-0.2 rounded-full bg-rose-500/25 text-rose-300 text-[10px] font-semibold">
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                      isActive
+                        ? 'bg-rose-500/30 text-rose-200 border border-rose-400/40 animate-pulse'
+                        : 'bg-rose-500/15 text-rose-300/80 border border-rose-400/20'
+                    }`}
+                    title={`${tab.conflictCount} merge conflicts`}
+                  >
                     !{tab.conflictCount}
                   </span>
                 )}
+
+                {/* Close Tab Button */}
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     closeRepoTab(tab.id);
                   }}
-                  className="opacity-60 hover:opacity-100 hover:text-rose-400 p-0.5 rounded"
-                  title="Close repository tab"
+                  className={`p-0.5 rounded transition ${
+                    isActive
+                      ? 'text-slate-400 hover:text-rose-400 hover:bg-white/10'
+                      : 'opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 hover:bg-white/10'
+                  }`}
+                  title="Close repository tab (Middle-click)"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -574,6 +709,117 @@ export const TopTabBar: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Tab Context Menu (Rendered via Portal to escape backdrop-filter containing block) */}
+      {tabContextMenu &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 select-none"
+            onClick={() => setTabContextMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setTabContextMenu(null);
+            }}
+          >
+            <div
+              style={{
+                top: Math.min(tabContextMenu.y, window.innerHeight - 220),
+                left: Math.min(tabContextMenu.x, window.innerWidth - 240),
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="fixed w-56 py-1.5 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl backdrop-blur-xl text-xs text-slate-200 flex flex-col gap-0.5 animate-in fade-in zoom-in-95 duration-100"
+            >
+              {/* Tab Header / Info */}
+              <div className="px-3 py-1.5 border-b border-white/10 flex items-center justify-between gap-2 text-slate-400">
+                <span className="font-semibold text-white truncate max-w-[140px]">
+                  {tabContextMenu.tab.name}
+                </span>
+                <span className="font-mono text-[10px] text-sky-400 truncate max-w-[70px]">
+                  {tabContextMenu.tab.currentBranch || 'HEAD'}
+                </span>
+              </div>
+
+              {/* Action: Switch to Tab (if inactive) */}
+              {tabContextMenu.tab.id !== activeTabId && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab(tabContextMenu.tab.id);
+                    setTabContextMenu(null);
+                  }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-sky-500/20 hover:text-white flex items-center gap-2 transition"
+                >
+                  <Check className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Switch to Repository</span>
+                </button>
+              )}
+
+              {/* Action: Copy Repo Path */}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(tabContextMenu.tab.path);
+                    showToast('Repository path copied to clipboard', 'success');
+                  } catch {
+                    showToast('Failed to copy repository path', 'error');
+                  }
+                  setTabContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-white/10 hover:text-white flex items-center gap-2 transition"
+              >
+                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                <span>Copy Repository Path</span>
+              </button>
+
+              <div className="h-px bg-white/10 my-1" />
+
+              {/* Action: Close Tab */}
+              <button
+                type="button"
+                onClick={() => {
+                  closeRepoTab(tabContextMenu.tab.id);
+                  setTabContextMenu(null);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-300 flex items-center gap-2 transition"
+              >
+                <X className="w-3.5 h-3.5 text-rose-400" />
+                <span>Close Tab</span>
+              </button>
+
+              {/* Action: Close Other Tabs */}
+              {tabs.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeOtherTabs(tabContextMenu.tab.id);
+                    setTabContextMenu(null);
+                  }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-300 flex items-center gap-2 transition"
+                >
+                  <X className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Close Other Tabs</span>
+                </button>
+              )}
+
+              {/* Action: Close Tabs to the Right */}
+              {tabs.findIndex((t) => t.id === tabContextMenu.tab.id) < tabs.length - 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeTabsToTheRight(tabContextMenu.tab.id);
+                    setTabContextMenu(null);
+                  }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 hover:text-rose-300 flex items-center gap-2 transition"
+                >
+                  <X className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Close Tabs to the Right</span>
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 };

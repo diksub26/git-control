@@ -203,6 +203,8 @@ interface GitStoreState {
   removeGitAccount: (accountId: string) => void;
   openRepoTab: (path: string) => Promise<void>;
   closeRepoTab: (tabId: string) => void;
+  closeOtherTabs: (tabId: string) => void;
+  closeTabsToTheRight: (tabId: string) => void;
   setActiveTab: (tabId: string) => Promise<void>;
   removeSavedRepo: (path: string) => void;
   cloneRepository: (
@@ -1792,6 +1794,31 @@ export const useGitStore = create<GitStoreState>((set, get) => {
       });
       if (activeTabId === tabId) {
         get().refreshActiveRepo();
+      }
+    },
+
+    closeOtherTabs: (tabId: string) => {
+      const { tabs, activeTabId } = get();
+      const targetTab = tabs.find((t) => t.id === tabId);
+      if (!targetTab) return;
+      const filtered = [targetTab];
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(filtered));
+      set({ tabs: filtered });
+      if (activeTabId !== tabId) {
+        get().setActiveTab(tabId);
+      }
+    },
+
+    closeTabsToTheRight: (tabId: string) => {
+      const { tabs, activeTabId } = get();
+      const targetIdx = tabs.findIndex((t) => t.id === tabId);
+      if (targetIdx === -1) return;
+      const filtered = tabs.slice(0, targetIdx + 1);
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(filtered));
+      const stillHasActive = filtered.some((t) => t.id === activeTabId);
+      set({ tabs: filtered });
+      if (!stillHasActive) {
+        get().setActiveTab(tabId);
       }
     },
 
