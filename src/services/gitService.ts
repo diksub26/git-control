@@ -1130,11 +1130,11 @@ export async function fetchRemotePullRequestsAndIssues(
 
     const base = `https://api.github.com/repos/${remoteInfo.owner}/${remoteInfo.repo}`;
     const [prRes, issueRes] = await Promise.all([
-      fetch(`${base}/pulls?state=all&per_page=30&_=${cacheBuster}`, {
+      fetch(`${base}/pulls?state=all&per_page=50&_=${cacheBuster}`, {
         headers,
         cache: 'no-store',
       }),
-      fetch(`${base}/issues?state=open&per_page=30&_=${cacheBuster}`, {
+      fetch(`${base}/issues?state=all&per_page=50&_=${cacheBuster}`, {
         headers,
         cache: 'no-store',
       }),
@@ -1192,11 +1192,11 @@ export async function fetchRemotePullRequestsAndIssues(
     const projectPath = encodeURIComponent(`${remoteInfo.owner}/${remoteInfo.repo}`);
     const base = `https://gitlab.com/api/v4/projects/${projectPath}`;
     const [mrRes, issueRes] = await Promise.all([
-      fetch(`${base}/merge_requests?per_page=30&_=${cacheBuster}`, {
+      fetch(`${base}/merge_requests?state=all&per_page=50&_=${cacheBuster}`, {
         headers,
         cache: 'no-store',
       }),
-      fetch(`${base}/issues?state=opened&per_page=30&_=${cacheBuster}`, {
+      fetch(`${base}/issues?state=all&per_page=50&_=${cacheBuster}`, {
         headers,
         cache: 'no-store',
       }),

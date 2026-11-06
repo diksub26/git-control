@@ -17,6 +17,7 @@ import {
   RemoteHostInfo,
   RemoteIssue,
   RemotePullRequest,
+  PrIssueFilter,
   RepoTab,
   WorkflowStepResult,
   WorkingFileChange,
@@ -100,6 +101,7 @@ interface GitStoreState {
   remoteInfo: RemoteHostInfo | null;
   pullRequests: RemotePullRequest[];
   issues: RemoteIssue[];
+  prFilter: PrIssueFilter;
   githubToken: string;
 
   // Graph settings (vscode-git-graph toolbar)
@@ -240,6 +242,7 @@ interface GitStoreState {
   discardFile: (filePath: string, isUntracked?: boolean) => Promise<void>;
   commitChanges: (message: string, amend?: boolean, signoff?: boolean) => Promise<boolean>;
   loadRemotePRsAndIssues: (opts?: { manual?: boolean }) => Promise<void>;
+  setPrFilter: (filter: PrIssueFilter) => void;
 }
 
 const SESSION_TABS_KEY = 'git-control-session-tabs';
@@ -471,6 +474,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
     remoteInfo: null,
     pullRequests: [],
     issues: [],
+    prFilter: initialActiveTab?.prFilter || 'open',
     githubToken: localStorage.getItem('git-control-gh-token') || '',
 
     graphStyle: 'angular',
@@ -1705,6 +1709,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         searchQuery: '',
         dateSince: '',
         dateUntil: '',
+        prFilter: 'open',
       };
 
       const nextTabs = [...get().tabs, newTab];
@@ -1726,6 +1731,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         activeDiffData: null,
         pullRequests: [],
         issues: [],
+        prFilter: 'open',
       });
 
       await get().refreshActiveRepo();
@@ -1753,6 +1759,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
           isRepoModalOpen: true,
           pullRequests: [],
           issues: [],
+          prFilter: 'open',
           remoteInfo: null,
         });
         return;
@@ -1779,6 +1786,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
               activeDiffData: null,
               pullRequests: [],
               issues: [],
+              prFilter: nextActiveTab.prFilter || 'open',
             }
           : {}),
       });
@@ -1815,6 +1823,7 @@ export const useGitStore = create<GitStoreState>((set, get) => {
         activeDiffData: null,
         pullRequests: [],
         issues: [],
+        prFilter: targetTab?.prFilter || 'open',
       });
       await get().refreshActiveRepo();
     },
@@ -2074,6 +2083,15 @@ export const useGitStore = create<GitStoreState>((set, get) => {
 
     setShowAvatars: (showAvatars) => set({ showAvatars }),
     setDiffViewMode: (diffViewMode) => set({ diffViewMode }),
+
+    setPrFilter: (prFilter: PrIssueFilter) => {
+      const { tabs, activeTabId } = get();
+      const updatedTabs = tabs.map((t) =>
+        t.id === activeTabId ? { ...t, prFilter } : t
+      );
+      localStorage.setItem(SESSION_TABS_KEY, JSON.stringify(updatedTabs));
+      set({ prFilter, tabs: updatedTabs });
+    },
 
     setGithubToken: (githubToken) => {
       localStorage.setItem('git-control-gh-token', githubToken);

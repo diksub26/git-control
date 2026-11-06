@@ -142,6 +142,8 @@ export interface RemoteIssue {
   body?: string;
 }
 
+export type PrIssueFilter = 'open' | 'closed' | 'all';
+
 export interface CommandLogEntry {
   id: string;
   timestamp: string;
@@ -168,6 +170,7 @@ export interface RepoTab {
   dateUntil?: string;
   preferredIdeId?: string;
   preferredAiHarnessId?: string;
+  prFilter?: PrIssueFilter;
 }
 
 export interface IdeConfig {

@@ -9,6 +9,7 @@ import {
   Boxes,
   GitPullRequest,
   CircleDot,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Check,
@@ -36,6 +37,8 @@ export const LeftSidebar: React.FC = () => {
     remoteInfo,
     pullRequests,
     issues,
+    prFilter,
+    setPrFilter,
     tabs,
     activeTabId,
     currentBranch,
@@ -363,6 +366,31 @@ export const LeftSidebar: React.FC = () => {
   const tags = refs.filter((r) => r.type === 'tag');
   const stashes = refs.filter((r) => r.type === 'stash');
   const conflictCount = workingFiles.filter((f) => f.conflicted).length;
+
+  const openPrCount = pullRequests.filter((pr) => pr.state === 'open').length;
+  const openIssueCount = issues.filter((iss) => iss.state === 'open').length;
+  const closedPrCount = pullRequests.filter(
+    (pr) => pr.state === 'closed' || pr.state === 'merged'
+  ).length;
+  const closedIssueCount = issues.filter((iss) => iss.state === 'closed').length;
+
+  const totalOpen = openPrCount + openIssueCount;
+  const totalClosed = closedPrCount + closedIssueCount;
+  const totalAll = pullRequests.length + issues.length;
+
+  const filteredPullRequests = pullRequests.filter((pr) => {
+    if (prFilter === 'open') return pr.state === 'open';
+    if (prFilter === 'closed') return pr.state === 'closed' || pr.state === 'merged';
+    return true;
+  });
+
+  const filteredIssues = issues.filter((iss) => {
+    if (prFilter === 'open') return iss.state === 'open';
+    if (prFilter === 'closed') return iss.state === 'closed';
+    return true;
+  });
+
+  const currentFilteredCount = filteredPullRequests.length + filteredIssues.length;
 
   return (
     <>
@@ -932,7 +960,7 @@ export const LeftSidebar: React.FC = () => {
                   <GitPullRequest className="w-3.5 h-3.5 text-pink-400" />
                   <span>PRs & Issues</span>
                   <span className="text-[10px] font-mono text-slate-500">
-                    {pullRequests.length + issues.length}
+                    {currentFilteredCount}
                   </span>
                 </button>
                 <div className="flex items-center gap-1">
@@ -961,59 +989,154 @@ export const LeftSidebar: React.FC = () => {
               </div>
 
               {openSections.prs && (
-                <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-3 space-y-1">
-                  {!remoteInfo && (
-                    <div className="text-[11px] text-slate-500 px-1">
-                      No GitHub/GitLab remote configured
-                    </div>
-                  )}
-                  {remoteInfo && pullRequests.length === 0 && issues.length === 0 && (
-                    <div className="text-[11px] text-slate-500 px-1">
-                      {remoteInfo.owner}/{remoteInfo.repo} — No open PRs or Issues found
-                    </div>
-                  )}
-
-                  {pullRequests.map((pr) => (
-                    <div
-                      key={pr.id}
-                      onClick={() => setSelectedPR(pr)}
-                      className="px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] cursor-pointer transition"
-                    >
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-mono text-pink-400">#{pr.number}</span>
-                        <span
-                          className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                            pr.state === 'open'
-                              ? 'bg-emerald-500/20 text-emerald-300'
-                              : pr.state === 'merged'
-                              ? 'bg-purple-500/20 text-purple-300'
-                              : 'bg-slate-500/20 text-slate-300'
+                <div className="flex-1 min-h-0 flex flex-col">
+                  {/* Segmented Filter: Open / Close / All */}
+                  {remoteInfo && (
+                    <div className="px-2.5 pt-0.5 pb-2 shrink-0">
+                      <div className="flex items-center p-0.5 bg-black/40 rounded-lg border border-white/5 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() => setPrFilter('open')}
+                          className={`flex-1 py-1 px-1 rounded-md text-center transition-all flex items-center justify-center gap-1 ${
+                            prFilter === 'open'
+                              ? 'bg-emerald-500/20 text-emerald-300 font-semibold shadow-sm border border-emerald-500/30'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
                           }`}
+                          title="Show open PRs & Issues"
                         >
-                          {pr.state}
-                        </span>
-                      </div>
-                      <div className="text-xs text-slate-200 truncate mt-0.5">
-                        {pr.title}
+                          <span>Open</span>
+                          <span className="font-mono text-[9px] opacity-75">
+                            ({totalOpen})
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPrFilter('closed')}
+                          className={`flex-1 py-1 px-1 rounded-md text-center transition-all flex items-center justify-center gap-1 ${
+                            prFilter === 'closed'
+                              ? 'bg-purple-500/20 text-purple-300 font-semibold shadow-sm border border-purple-500/30'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
+                          }`}
+                          title="Show closed and merged PRs & Issues"
+                        >
+                          <span>Close</span>
+                          <span className="font-mono text-[9px] opacity-75">
+                            ({totalClosed})
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPrFilter('all')}
+                          className={`flex-1 py-1 px-1 rounded-md text-center transition-all flex items-center justify-center gap-1 ${
+                            prFilter === 'all'
+                              ? 'bg-sky-500/20 text-sky-300 font-semibold shadow-sm border border-sky-500/30'
+                              : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
+                          }`}
+                          title="Show all PRs & Issues"
+                        >
+                          <span>All</span>
+                          <span className="font-mono text-[9px] opacity-75">
+                            ({totalAll})
+                          </span>
+                        </button>
                       </div>
                     </div>
-                  ))}
+                  )}
 
-                  {issues.map((iss) => (
-                    <div
-                      key={iss.id}
-                      onClick={() => setSelectedIssue(iss)}
-                      className="px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] cursor-pointer transition"
-                    >
-                      <div className="flex items-center gap-1.5 text-[11px]">
-                        <CircleDot className="w-3 h-3 text-emerald-400 shrink-0" />
-                        <span className="font-mono text-slate-400">#{iss.number}</span>
-                        <span className="text-xs text-slate-200 truncate">
-                          {iss.title}
-                        </span>
+                  <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-3 space-y-1">
+                    {!remoteInfo && (
+                      <div className="text-[11px] text-slate-500 px-1 py-1">
+                        No GitHub/GitLab remote configured
                       </div>
-                    </div>
-                  ))}
+                    )}
+                    {remoteInfo && totalAll === 0 && (
+                      <div className="text-[11px] text-slate-500 px-1 py-1">
+                        {remoteInfo.owner}/{remoteInfo.repo} — No PRs or Issues found
+                      </div>
+                    )}
+                    {remoteInfo && totalAll > 0 && currentFilteredCount === 0 && (
+                      <div className="text-[11px] text-slate-500 px-1 py-3 text-center">
+                        No {prFilter === 'closed' ? 'closed' : prFilter} PRs or issues found
+                      </div>
+                    )}
+
+                    {filteredPullRequests.length > 0 && (
+                      <div className="space-y-1">
+                        {(filteredIssues.length > 0 || prFilter === 'all') && (
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1 pt-1 pb-0.5 flex items-center gap-1.5">
+                            <GitPullRequest className="w-3 h-3 text-pink-400" />
+                            <span>Pull Requests ({filteredPullRequests.length})</span>
+                          </div>
+                        )}
+                        {filteredPullRequests.map((pr) => (
+                          <div
+                            key={pr.id}
+                            onClick={() => setSelectedPR(pr)}
+                            className="px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] cursor-pointer transition border border-transparent hover:border-white/5"
+                          >
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-mono text-pink-400">#{pr.number}</span>
+                              <span
+                                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                                  pr.state === 'open'
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : pr.state === 'merged'
+                                    ? 'bg-purple-500/20 text-purple-300'
+                                    : 'bg-slate-500/20 text-slate-300'
+                                }`}
+                              >
+                                {pr.state}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-200 truncate mt-0.5">
+                              {pr.title}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {filteredIssues.length > 0 && (
+                      <div className={`space-y-1 ${filteredPullRequests.length > 0 ? 'pt-2' : ''}`}>
+                        {(filteredPullRequests.length > 0 || prFilter === 'all') && (
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1 pt-1 pb-0.5 flex items-center gap-1.5">
+                            <CircleDot className="w-3 h-3 text-emerald-400" />
+                            <span>Issues ({filteredIssues.length})</span>
+                          </div>
+                        )}
+                        {filteredIssues.map((iss) => (
+                          <div
+                            key={iss.id}
+                            onClick={() => setSelectedIssue(iss)}
+                            className="px-2 py-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] cursor-pointer transition border border-transparent hover:border-white/5"
+                          >
+                            <div className="flex items-center justify-between text-[11px]">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {iss.state === 'closed' ? (
+                                  <CheckCircle2 className="w-3 h-3 text-purple-400 shrink-0" />
+                                ) : (
+                                  <CircleDot className="w-3 h-3 text-emerald-400 shrink-0" />
+                                )}
+                                <span className="font-mono text-slate-400">#{iss.number}</span>
+                              </div>
+                              <span
+                                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                                  iss.state === 'open'
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : 'bg-slate-500/20 text-slate-300'
+                                }`}
+                              >
+                                {iss.state}
+                              </span>
+                            </div>
+                            <div className="text-xs text-slate-200 truncate mt-0.5">
+                              {iss.title}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -1056,7 +1179,15 @@ export const LeftSidebar: React.FC = () => {
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-medium uppercase">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase ${
+                        selectedPR.state === 'open'
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : selectedPR.state === 'merged'
+                          ? 'bg-purple-500/20 text-purple-300'
+                          : 'bg-slate-500/20 text-slate-300'
+                      }`}
+                    >
                       {selectedPR.state}
                     </span>
                     <span className="text-xs font-mono text-slate-400">
@@ -1114,9 +1245,20 @@ export const LeftSidebar: React.FC = () => {
             <div className="w-full max-w-xl rounded-2xl bg-slate-900/95 border border-white/15 p-5 shadow-2xl">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div>
-                  <span className="text-xs font-mono text-emerald-400">
-                    Issue #{selectedIssue.number} by {selectedIssue.author}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase ${
+                        selectedIssue.state === 'open'
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : 'bg-purple-500/20 text-purple-300'
+                      }`}
+                    >
+                      {selectedIssue.state}
+                    </span>
+                    <span className="text-xs font-mono text-slate-400">
+                      Issue #{selectedIssue.number} by {selectedIssue.author}
+                    </span>
+                  </div>
                   <h3 className="text-base font-semibold text-white mt-1">
                     {selectedIssue.title}
                   </h3>
