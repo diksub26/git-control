@@ -5,7 +5,7 @@
 # ⚡ Git Control
 
 **A Blazing-Fast, Glassmorphic Multi-Platform Git GUI & Interactive Commit Graph**  
-*Built with Tauri v2 (Rust), React 18, TypeScript, and Monaco Editor for Windows 11 & macOS.*
+*Built with Tauri v2 (Rust), React 18, TypeScript, and Monaco Editor for Windows 11 & macOS (Linux: not officially supported yet).*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-38bdf8.svg)](./LICENSE)
 [![Tauri v2](https://img.shields.io/badge/Tauri-v2.0-ffc131?logo=tauri&logoColor=white)](https://v2.tauri.app/)
@@ -46,9 +46,38 @@
   - **Interactive Hunk-Level Staging**: Stage, unstage, or discard individual diff hunks (`git apply --cached --unidiff-zero`).
   - **3-Way Merge Conflict Resolver**: Resolve conflict blocks with 1-click *Accept Current (Ours)*, *Accept Incoming (Theirs)*, or *Accept Both*.
 
+- **🔀 Pull Requests, Merge Requests & Issues**
+  - **Create PR / MR** on **GitHub** or **GitLab** directly from the toolbar or sidebar, with *Draft* support and an *Open in Browser* shortcut.
+  - **PRs & Issues Sidebar**: Browse open, closed/merged, or all PRs & Issues using the account linked to the repository in the Account Manager.
+  - *Open on Web* shortcuts for the repository, commits, PRs, and issues.
+
+- **⚙️ Git Workflows (Sequential Command Macros)**
+  - Build reusable macros such as `git fetch -p` → `git pull origin main` → `git push -f` and run them in 1 click on the active repository.
+  - Create, edit, duplicate, delete, and reorder steps, with an optional **Ignore Fail** flag to continue after a failing step.
+
+- **🧰 IDE & AI Harness Integration**
+  - Open the active repository in your **Code IDE** (VS Code, Cursor, Zed, Sublime Text, JetBrains WebStorm / IntelliJ IDEA, System File Explorer, and more) or launch an **AI Coding Harness** (Antigravity, Claude Code, Codex, Cursor, Aider, etc.) in a terminal inside the repo directory.
+  - Bind a preferred IDE / AI Harness **per repository** or set a **global default**, auto-detect installed tools with *Re-Scan System*, and add **custom tools** (GUI app or Terminal CLI command).
+
+- **✍️ Commit, Sync & Branching Toolbar**
+  - Commit panel with **Amend**, **Sign-off**, and **Commit & Push**; stage / unstage / discard per file.
+  - **Fetch** (`--all --prune`), **Pull**, **Pull with Rebase**, **Pull from…** (pick remote & branch), and **Push** with live ahead / behind indicators.
+  - Create branches from `HEAD`, a specific branch, or a specific commit, with optional immediate checkout; stash working changes in 1 click.
+  - Sidebar with Local / Remote branches, Stashes, and Tags — merge, checkout (double-click), and delete in place — plus a resizable layout.
+
 - **🛡️ Destructive Action Safeguards & Live Command Console**
   - Confirmation modals with exact Git command previews before executing destructive operations (Delete Branch, Delete Tag, Drop Stash, Hard Reset, Discard Changes/Hunks).
   - Real-time **Git Command Log Console** showing every executed `git` command, exit code, and execution duration in milliseconds.
+
+---
+
+## 🖥️ Supported Platforms
+
+| Platform | Status | Notes |
+| :--- | :--- | :--- |
+| **Windows 11** | ✅ Fully supported | Native **Mica** backdrop (falls back to Acrylic). Requires WebView2 runtime. Installers: `.msi` / `.exe`. |
+| **macOS** | ✅ Fully supported | Native **Vibrancy** backdrop. Installers: `.dmg` / `.app`. |
+| **Linux** | ⚠️ Not officially supported | No glass effect, and IDE / AI Harness terminal launching is currently Windows & macOS only. Contributions welcome. |
 
 ---
 
@@ -102,6 +131,8 @@ pnpm tauri build
 | `Ctrl / Cmd + Click` on Second Commit | Compare diff between two commits |
 | `Right-Click` on Commit / Branch Badge | Open contextual Git operations menu |
 | `Double-Click` Local Branch in Sidebar | Checkout branch immediately |
+| `Double-Click` Remote Branch in Sidebar | Checkout remote branch locally |
+| `Drag` Sidebar Edge / Divider | Resize sidebar width / section height (double-click to reset height) |
 | `Esc` | Close active modal, dropdown, or confirmation dialog |
 
 ---
