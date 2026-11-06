@@ -21,7 +21,7 @@ jobs:
             args: ''
           - platform: macos-latest # Apple Silicon (aarch64)
             args: '--target aarch64-apple-darwin'
-          - platform: macos-13 # Intel (x86_64)
+          - platform: macos-15-intel # Intel (x86_64)
             args: '--target x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
@@ -37,7 +37,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20.11.1
+          node-version: 24
           cache: pnpm
 
       - name: Install Rust stable
